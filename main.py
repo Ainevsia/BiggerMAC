@@ -1,13 +1,9 @@
-from extractor import extractor
+from extractor.zipextractor import ZipExtractor
+from utils.logger import Logger
 
 if __name__ == "__main__":
-    print("Hello World!")
-    extractor('test.zip')
-
-
-
-
-
+    Logger.debug("main.py")
+    ZipExtractor()
     
     
 

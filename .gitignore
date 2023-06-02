@@ -1,4 +1,6 @@
 externals/
+firmwares/
+firmwares_extracted/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
