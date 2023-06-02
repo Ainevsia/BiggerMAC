@@ -4,7 +4,7 @@ import os
 
 class ZipExtractor:
     '''extract zipped firmware'''
-    def __init__(self, filename: str = 'Huawei_Mate_50_Pro_DCO-LX9_103.0.0.126_C10E10R2P1_Product_Combination_Software_EMUI13.0.0_05019ASD_Dload.zip'):
+    def __init__(self, filename: str) -> 'ZipExtractor':
         self.filename = os.path.basename(filename)
         Logger.info(f"ZipExtractor init: {self.filename}")
         self.extract()
@@ -23,6 +23,7 @@ class ZipExtractor:
             return
         zip_file_path_out = os.path.join(module_path, 'firmwares_extracted', os.path.splitext(self.filename)[0])
         Logger.debug(f"ZipExtractor: zip_file_path_out: {zip_file_path_out}")
+        self.extracted_path = zip_file_path_out
         if not os.path.exists(zip_file_path_out):
             os.makedirs(zip_file_path_out)
             with ZipFile(zip_file_path_in, 'r') as zf:
@@ -51,3 +52,14 @@ class ZipExtractor:
             
         Logger.info("ZipExtractor status: done")
         return
+
+    def split_update_app(self):
+        '''use python script splituapp.py(an external tool) to split update.app'''
+        from utils.splituapp import extract
+        if not hasattr(self, 'extracted_path'):
+            Logger.error("ZipExtractor: no extracted_path")
+            return
+        for dirpath, dirnames, filenames in os.walk(self.extracted_path):
+            for filename in filenames:
+                if filename.lower() == 'update.app':
+                    extract(os.path.join(dirpath, filename))
