@@ -1,3 +1,4 @@
+from extractor.filesystemparser import AndroidSparseImageParser
 from utils.logger import Logger
 from zipfile import ZipFile
 import os
@@ -63,3 +64,26 @@ class ZipExtractor:
             for filename in filenames:
                 if filename.lower() == 'update.app':
                     extract(os.path.join(dirpath, filename))
+
+
+    def process_file(self):
+        '''process files in extracted_path'''
+        import magic
+        if not hasattr(self, 'extracted_path'):
+            Logger.error("ZipExtractor: no extracted_path")
+            return
+        for dirpath, dirnames, filenames in os.walk(self.extracted_path):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                filetype = magic.from_file(filepath)
+                if filetype.startswith('Android sparse image'):
+                    Logger.debug(f"ZipExtractor: Android sparse image found: {filename}")
+                    AndroidSparseImageParser(filepath).parse()
+                elif filetype.startswith('Android bootimg'):
+                    Logger.debug(f"ZipExtractor: Android bootimg found: {filename}")
+                elif filetype.startswith('DOS/MBR boot sector'):
+                    Logger.debug(f"ZipExtractor: DOS/MBR boot sector found: {filename}")
+                elif filetype.startswith('Linux rev'):
+                    Logger.debug(f"ZipExtractor: Linux rev found: {filename}")
+                else:
+                    pass

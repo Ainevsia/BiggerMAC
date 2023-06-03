@@ -14,6 +14,9 @@ def extract(source: str, flist = None):
 
 	bytenum = 4
 	outdir = os.path.join(os.path.dirname(source), 'output')
+	if os.path.exists(outdir):
+		print('Output directory already exists')
+		return 1
 	img_files = []
 	
 	try:

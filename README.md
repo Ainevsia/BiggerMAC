@@ -27,4 +27,14 @@ make install    # installed in Python-3.11.3/usr
 source venv/bin/activate    # activate this virtual environment
 ```
 
-- 
+- install libraries
+
+```sh
+pip install python-magic
+```
+
+# Workflow
+
+1. Extract Zip files
+2. Parse UPDATE.APP
+3. use Android sparse image
