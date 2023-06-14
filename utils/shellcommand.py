@@ -7,7 +7,7 @@ class ShellCommandExecutor():
     def __init__(self, cmdlst: List[str]):
         self.cmdlst = cmdlst
     
-    def execute(self) -> Tuple[str, str]:
+    def execute(self) -> int:
         Logger.debug(f"ShellCommandExecutor: cmdlst: {self.cmdlst}")
         proc = subprocess.Popen(self.cmdlst, 
                                 shell=False, 
@@ -15,6 +15,7 @@ class ShellCommandExecutor():
                                 stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, 
                                 stderr=subprocess.PIPE)
-        stdout_data, stderr_data = proc.communicate()
-        Logger.debug(f"ShellCommandExecutor: stdout_data: {stdout_data}")
-        return stdout_data, stderr_data
+        # stdout_data, stderr_data = proc.communicate()
+        proc.communicate()
+        # Logger.debug(f"ShellCommandExecutor: stdout_data: {stdout_data}")
+        return proc.returncode  # success: 0, error: 1

@@ -1,4 +1,4 @@
-from extractor.filesystemparser import AndroidSparseImageParser
+from extractor.filesystemparser import AndroidSparseImageParser, LinuxExt4ImageParser
 from utils.logger import Logger
 from zipfile import ZipFile
 import os
@@ -81,9 +81,12 @@ class ZipExtractor:
                     AndroidSparseImageParser(filepath).parse()
                 elif filetype.startswith('Android bootimg'):
                     Logger.debug(f"ZipExtractor: Android bootimg found: {filename}")
+                    exit(1)
                 elif filetype.startswith('DOS/MBR boot sector'):
-                    Logger.debug(f"ZipExtractor: DOS/MBR boot sector found: {filename}")
+                    Logger.debug(f"ZipExtractor: DOS/MBR boot sector found: {filepath}")
+                    LinuxExt4ImageParser(filepath).parse('vfat')
                 elif filetype.startswith('Linux rev'):
                     Logger.debug(f"ZipExtractor: Linux rev found: {filename}")
+                    LinuxExt4ImageParser(filepath).parse()
                 else:
                     pass
