@@ -1,3 +1,4 @@
+import shutil
 from utils import module_path, split_path_all
 from utils.logger import Logger
 from utils.shellcommand import ShellCommandExecutor
@@ -99,8 +100,15 @@ class AndroidBootingParser(FilesystemParser):
                 process1 = subprocess.Popen([lz4, '-dc', ramdisk_file_path], stdout=subprocess.PIPE)
                 process2 = subprocess.Popen(['cpio', '-idm', '-D', ramdisk_out_path], stdin=process1.stdout, stdout=subprocess.PIPE)
                 process2.communicate()
+        elif filetype.startswith('gzip'):
+            if not os.path.exists(ramdisk_out_path):
+                os.makedirs(ramdisk_out_path)
+                process1 = subprocess.Popen(['gunzip', '-c', ramdisk_file_path], stdout=subprocess.PIPE)
+                process2 = subprocess.Popen(['cpio', '-idm', '-D', ramdisk_out_path], stdin=process1.stdout, stdout=subprocess.PIPE)
+                process2.communicate()
         else:
             print(filetype)
             Logger.error(f"AndroidBootingParse: unknown filetype: {ramdisk_file_path} --> {filetype}")
             exit(1)
+        shutil.rmtree(os.path.join(self.booting_extraced, f'{self.filename}-extracted'))
         return

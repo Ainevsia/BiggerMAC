@@ -1,6 +1,7 @@
 from extractor.filesystemparser import AndroidSparseImageParser, LinuxExt4ImageParser, AndroidBootingParser
 from utils.logger import Logger
 from zipfile import ZipFile
+from utils import module_path
 import os
 
 class ZipExtractor:
@@ -16,7 +17,6 @@ class ZipExtractor:
         if not hasattr(self, 'filename'):
             Logger.error("ZipExtractor: no filename")
             return
-        module_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         Logger.debug(f"ZipExtractor: module_path: {module_path}")
         zip_file_path_in = os.path.join(module_path, 'firmwares', self.filename)
         if not os.path.exists(zip_file_path_in):
@@ -65,7 +65,6 @@ class ZipExtractor:
                 if filename.lower() == 'update.app':
                     extract(os.path.join(dirpath, filename))
 
-
     def process_file(self):
         '''process files in extracted_path'''
         import magic
@@ -90,3 +89,7 @@ class ZipExtractor:
                     LinuxExt4ImageParser(filepath).parse()
                 else:
                     pass
+
+    def get_mnt(self):
+        '''get mount point of extracted file'''
+        return os.path.join(module_path, 'firmwares_mnt', os.path.splitext(self.filename)[0])
