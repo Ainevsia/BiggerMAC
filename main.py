@@ -15,6 +15,9 @@ if __name__ == "__main__":
     ext = ZipExtractor('Huawei_Mate_50_Pro_DCO-LX9_103.0.0.126_C10E10R2P1_Product_Combination_Software_EMUI13.0.0_05019ASD_Dload.zip')
     ext.split_update_app() 
     ext.process_file()
+    Logger.debug("Extractor done !")
+
+    
     Logger.debug("main.py done")
     
 

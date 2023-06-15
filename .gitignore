@@ -1,6 +1,8 @@
 externals/
 firmwares/
 firmwares_extracted/
+firmwares_booting_extracted/
+firmwares_mnt/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

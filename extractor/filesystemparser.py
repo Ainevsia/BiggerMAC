@@ -1,4 +1,3 @@
-
 from utils import module_path, split_path_all
 from utils.logger import Logger
 from utils.shellcommand import ShellCommandExecutor
@@ -22,6 +21,10 @@ class FilesystemParser:
         self.mount_point = os.path.join(module_path, 'firmwares_mnt', self.firmware_name)
         if not os.path.exists(self.mount_point):
             os.makedirs(self.mount_point)
+        self.booting_extraced =  os.path.join(module_path, 'firmwares_booting_extracted', self.firmware_name)
+        if not os.path.exists(self.booting_extraced):
+            os.makedirs(self.booting_extraced)
+        self.filename = os.path.splitext(os.path.basename(self.filepath))[0]
 
 class AndroidSparseImageParser(FilesystemParser):
     def __init__(self, path: str):
@@ -46,8 +49,8 @@ class AndroidSparseImageParser(FilesystemParser):
             Logger.info(f"AndroidSparseImageParser: Linux rev: {ext4_file_path}")
             LinuxExt4ImageParser(ext4_file_path).parse()
         else:
-            Logger.error(f"AndroidSparseImageParser: unknown filetype: {ext4_file_path}")
-            exit(1)
+            Logger.error(f"AndroidSparseImageParser: unknown filetype: {ext4_file_path} --> {filetype}")
+            pass
 
 class LinuxExt4ImageParser(FilesystemParser):   # make sure the image is ext4
     def __init__(self, path: str):
@@ -67,4 +70,37 @@ class LinuxExt4ImageParser(FilesystemParser):   # make sure the image is ext4
                 Logger.error(f"LinuxExt4ImageParser: mount failed: {self.filepath}")
             else:
                 Logger.info(f"LinuxExt4ImageParser: mount success: {self.filepath}")
+        return
+
+class AndroidBootingParser(FilesystemParser):
+    def __init__(self, path: str):
+        super().__init__(path)
+
+    def parse(self):
+        '''use imgtool'''
+        imjtool = os.path.join(module_path, 'externals', 'imjtool', 'imjtool.ELF64')
+        if not os.path.exists(imjtool):
+            raise FileNotFoundError(f"AndroidBootingParse: imjtool not found: {imjtool}")
+        lz4 = os.path.join(module_path, 'externals', 'lz4', 'lz4')
+        if not os.path.exists(lz4):
+            raise FileNotFoundError(f"AndroidBootingParse: lz4 not found: {lz4}")
+        os.chdir(self.booting_extraced)
+        if not os.path.exists(os.path.join(self.booting_extraced, f'{self.filename}-extracted')):
+            ShellCommandExecutor([imjtool, self.filepath, 'extract']).execute()
+            os.rename(os.path.join(self.booting_extraced, 'extracted'), os.path.join(self.booting_extraced, f'{self.filename}-extracted'))
+        os.chdir(module_path)
+        ramdisk_file_path = os.path.join(self.booting_extraced, f'{self.filename}-extracted', 'ramdisk')
+        ramdisk_out_path = os.path.join(self.booting_extraced, f'{self.filename}-ramdisk.cpio')
+        import magic
+        filetype = magic.from_file(ramdisk_file_path)
+        if filetype.startswith('LZ4'):
+            if not os.path.exists(ramdisk_out_path):
+                os.makedirs(ramdisk_out_path)
+                process1 = subprocess.Popen([lz4, '-dc', ramdisk_file_path], stdout=subprocess.PIPE)
+                process2 = subprocess.Popen(['cpio', '-idm', '-D', ramdisk_out_path], stdin=process1.stdout, stdout=subprocess.PIPE)
+                process2.communicate()
+        else:
+            print(filetype)
+            Logger.error(f"AndroidBootingParse: unknown filetype: {ramdisk_file_path} --> {filetype}")
+            exit(1)
         return
