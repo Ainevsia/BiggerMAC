@@ -9,8 +9,10 @@ BiggerMAC: Analysis tool to introspect and query Android security policies.
 # Build Steps
 
 - Download Python 3.11.3 source tarball and build Python
+- In order to get IPython embed() ability, install libsqlite3-dev
 
 ```sh
+sudo apt install libsqlite3-dev
 wget https://www.python.org/ftp/python/3.11.3/Python-3.11.3.tar.xz
 tar xJf Python-3.11.3.tar.xz
 cd Python-3.11.3 && mkdir tmp && mkdir usr && cd tmp

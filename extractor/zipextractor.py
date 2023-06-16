@@ -94,6 +94,7 @@ class ZipExtractor:
                 else:
                     pass
                 if isinstance(fs, FileSystem):
+                    # print('+++' + filepath)
                     fs_lst.append(fs)
         return fs_lst
     

@@ -1,4 +1,6 @@
+import fnmatch
 import os, stat
+from typing import Dict, List, Self
 
 from android.sepolicy import SELinuxContext
 from utils.logger import Logger
@@ -46,23 +48,38 @@ class FilePolicy:
     def __repr__(self):
         return self.original_path
 
+class MountPoint():
+    def __init__(self, type: str, device: str, options: List[str]):
+        self.type = type
+        self.device = device
+        self.options = options
+
 class FileSystem:
     def __init__(self, path: str, name: str):
         self.name = name
         self.path = path
 
     def __repr__(self):
-        return self.name
+        return f'<FileSystem {self.name} -> {self.path}>'
+    
+    def __eq__(self, __value: object) -> bool:
+        if isinstance(__value, FileSystem):
+            return self.name == __value.name and self.path == __value.path
+        return False
+    
+    def __hash__(self) -> int:
+        return hash((self.name, self.path))
 
 class FileSystemPolicy: 
     def __init__(self):
-        self.files: dict(str, FilePolicy) = {}
+        self.files: Dict[str, FilePolicy] = {}
+        self.mount_points: Dict[str, MountPoint] = {}
 
     def __repr__(self):
-        res = object.__repr__(self) + '\n'
-        for attribute, value in self.__dict__.items():
-            res += attribute +  " = " + str(value) + '\n'
-        return res
+        # only display the first x elements of self.files
+        # this is because the filesystems can have thousands of files
+        # and printing all of them is not helpful
+        return f"<FileSystemPolicy {dict(list(self.files.items())[:1])}>"
 
     def add_file(self, path: str, file_policy: FilePolicy):
         if path != "/" and path.endswith("/"):
@@ -70,3 +87,27 @@ class FileSystemPolicy:
         if path in self.files:
             raise ValueError("Cannot re-add existing path '%s' to policy" % path)
         self.files[path] = file_policy
+    
+    def find(self, pattern: str) -> List[str]:
+        '''Find all files that match the given pattern'''
+        return list(filter(lambda x: fnmatch.fnmatch(x, pattern), self.files.keys()))
+    
+    def add_mount_point(self, path: str, fstype: str, device: str, options: List[str]):
+        path = os.path.normpath(path)
+        if path in self.mount_points:
+            raise ValueError("Cannot readd mount-point %s without remount" % (path))
+        self.mount_points[path] = MountPoint(fstype, device, options)
+
+    def mount(self, other_fs: Self, mount_point: str):
+        '''Mount a filesystem into the policy'''
+        # transform all paths
+        for fn, v in other_fs.files.items():
+            # ensure all paths are absolute
+            assert fn[0] == "/"
+            # remove leading slash, making fn relative
+            fn = fn[1:]
+            # special case: root of other_fs is now mount point
+            if fn == "":
+                self.files[mount_point] = v
+                continue
+            self.add_file(os.path.join(mount_point, fn), v)

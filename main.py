@@ -20,11 +20,12 @@ if __name__ == "__main__":
     ext = ZipExtractor('Huawei_Mate_20.zip')
     ext.split_update_app() 
     fs_lst: List[FileSystem] = ext.process_file()
+    Logger.debug(f"fs_lst: {fs_lst}")
     Logger.debug("Extractor done !")
     # now collect all selinux files from the file system !
-    a = AndroidSecurityPolicyExtractor().walk_fs(os.path.join(ext.get_mnt(), 'splash2'))
-    print(a)
-    print(fs_lst)
+    a = AndroidSecurityPolicyExtractor(fs_lst, 'Huawei_Mate_20').extract_from_firmware()
+    # a = AndroidSecurityPolicyExtractor(fs_lst, 'Huawei_Mate_20').walk_fs('/home/u/BiggerMAC/firmwares_mnt/Huawei_Mate_20/vendor')
+    # from IPython import embed; embed()
     Logger.debug("main.py done")
     
 
