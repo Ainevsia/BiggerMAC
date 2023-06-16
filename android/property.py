@@ -6,8 +6,6 @@ PROPERTY_KEY = re.compile(r'[-_.a-zA-Z0-9]+')   # 匹配-_.等的key字符串
 PROPERTY_VALUE = re.compile(r'[^#]*')
 PROPERTY_KV = re.compile(r'^\s*([-_.a-zA-Z0-9]+)\s*=\s*([^#]*)')
 
-
-
 class AndroidPropertyList:
     '''all properties in the Android system, only one field: prop'''
     def __init__(self):
@@ -46,3 +44,10 @@ class AndroidPropertyList:
 
         # Merge in the final found properties
         self._merge(properties)
+
+    def to_file(self, filename: str):
+        '''文本形式写入file中'''
+        with open(filename, 'w') as fp:
+            for k, v in self.prop.items():
+                fp.write("%s=%s\n" % (k, v))
+

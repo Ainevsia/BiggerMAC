@@ -1,6 +1,7 @@
 import copy
 import fnmatch
 import os
+import pickle
 import shutil
 from typing import Dict, List
 from android.property import AndroidPropertyList
@@ -144,6 +145,8 @@ class AndroidSecurityPolicyExtractor():
         self.extract_properties()
         self.extract_init()
 
+        self.save()
+
     def save_file(self, source: str, path: str, overwrite: bool = False):
         '''将文件从挂载点保存至eval汇总目录中'''
         save_path = os.path.join(module_path, 'eval', self.name, path)
@@ -198,6 +201,22 @@ class AndroidSecurityPolicyExtractor():
             src = self.combined_fs.files[fstab_file].original_path
             self.save_file(src, os.path.join("init", fstab_file[1:]))
 
+    def save(self):
+        self.properties.to_file(os.path.join(module_path, 'eval', self.name, 'all_properties.prop'))
+        Logger.info(f'Saved all properties')
+        self.save_db(self.combined_fs, "combined_fs.pkl")
 
+    def save_db(self, obj: object, name: str):
+        db_dir = os.path.join(module_path, 'eval', self.name, "db")
+        if not os.path.exists(db_dir):
+            os.makedirs(db_dir)
+        if not os.access(db_dir, os.W_OK):
+            raise ValueError("Unable to open '%s' database for writing" % name)
+        with open(os.path.join(db_dir, name), 'wb') as fp:
+            pickle.dump(obj, fp, protocol=pickle.DEFAULT_PROTOCOL)
+        Logger.info(f'Saved database {name}')
 
-
+    def load(self):
+        self.properties = AndroidPropertyList()
+        self.properties.from_file(os.path.join(module_path, 'eval', self.name, 'all_properties.prop'))
+        self.combined_fs = self.load_db("combined_fs.pkl")
