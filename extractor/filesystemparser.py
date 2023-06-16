@@ -1,4 +1,5 @@
 import shutil
+from fs.filesystempolicy import FileSystem
 from utils import module_path, split_path_all
 from utils.logger import Logger
 from utils.shellcommand import ShellCommandExecutor
@@ -31,7 +32,7 @@ class AndroidSparseImageParser(FilesystemParser):
     def __init__(self, path: str):
         super().__init__(path)
     
-    def parse(self):
+    def parse(self) -> FileSystem:
         '''use simg2img to convert sparse image to raw image'''
         simg2img = os.path.join(module_path, 'externals', 'android-simg2img', 'simg2img')
         if not os.path.exists(simg2img):
@@ -48,7 +49,7 @@ class AndroidSparseImageParser(FilesystemParser):
             return
         elif filetype.startswith('Linux rev'):
             Logger.info(f"AndroidSparseImageParser: Linux rev: {ext4_file_path}")
-            LinuxExt4ImageParser(ext4_file_path).parse()
+            return LinuxExt4ImageParser(ext4_file_path).parse()
         else:
             Logger.error(f"AndroidSparseImageParser: unknown filetype: {ext4_file_path} --> {filetype}")
             pass
@@ -57,7 +58,7 @@ class LinuxExt4ImageParser(FilesystemParser):   # make sure the image is ext4
     def __init__(self, path: str):
         super().__init__(path)
     
-    def parse(self, fs_type: str = 'ext4'):
+    def parse(self, fs_type: str = 'ext4') -> FileSystem:
         '''use mount to mount ext4 image'''
         mount_dir = os.path.join(self.mount_point, os.path.splitext(os.path.basename(self.filepath))[0])
         if not os.path.exists(mount_dir):
@@ -69,15 +70,16 @@ class LinuxExt4ImageParser(FilesystemParser):   # make sure the image is ext4
             res = ShellCommandExecutor(['mount', '-o', 'ro', '-t', fs_type, self.filepath, mount_dir]).execute()
             if res != 0:
                 Logger.error(f"LinuxExt4ImageParser: mount failed: {self.filepath}")
+                return
             else:
                 Logger.info(f"LinuxExt4ImageParser: mount success: {self.filepath}")
-        return
+        return FileSystem(mount_dir, self.filename)
 
 class AndroidBootingParser(FilesystemParser):
     def __init__(self, path: str):
         super().__init__(path)
 
-    def parse(self):
+    def parse(self) -> FileSystem:
         '''use imgtool'''
         imjtool = os.path.join(module_path, 'externals', 'imjtool', 'imjtool.ELF64')
         if not os.path.exists(imjtool):
@@ -111,4 +113,4 @@ class AndroidBootingParser(FilesystemParser):
             Logger.error(f"AndroidBootingParse: unknown filetype: {ramdisk_file_path} --> {filetype}")
             exit(1)
         shutil.rmtree(os.path.join(self.booting_extraced, f'{self.filename}-extracted'))
-        return
+        return FileSystem(ramdisk_out_path, self.filename)

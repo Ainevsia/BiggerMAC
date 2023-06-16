@@ -1,4 +1,6 @@
+from typing import List
 from extractor.filesystemparser import AndroidSparseImageParser, LinuxExt4ImageParser, AndroidBootingParser
+from fs.filesystempolicy import FileSystem
 from utils.logger import Logger
 from zipfile import ZipFile
 from utils import module_path
@@ -65,31 +67,36 @@ class ZipExtractor:
                 if filename.lower() == 'update.app':
                     extract(os.path.join(dirpath, filename))
 
-    def process_file(self):
-        '''process files in extracted_path'''
+    def process_file(self) -> List[FileSystem]:
+        '''process files in extracted_path, return file system'''
         import magic
         if not hasattr(self, 'extracted_path'):
             Logger.error("ZipExtractor: no extracted_path")
             return
+        fs_lst: List[FileSystem] = []
         for dirpath, dirnames, filenames in os.walk(self.extracted_path):
             for filename in filenames:
                 filepath = os.path.join(dirpath, filename)
                 filetype = magic.from_file(filepath)
+                fs = None
                 if filetype.startswith('Android sparse image'):
                     Logger.debug(f"ZipExtractor: Android sparse image found: {filename}")
-                    AndroidSparseImageParser(filepath).parse()
+                    fs = AndroidSparseImageParser(filepath).parse()
                 elif filetype.startswith('Android bootimg'):
                     Logger.debug(f"ZipExtractor: Android bootimg found: {filename}")
-                    AndroidBootingParser(filepath).parse()
+                    fs = AndroidBootingParser(filepath).parse()
                 elif filetype.startswith('DOS/MBR boot sector'):
                     Logger.debug(f"ZipExtractor: DOS/MBR boot sector found: {filepath}")
-                    LinuxExt4ImageParser(filepath).parse('vfat')
+                    fs = LinuxExt4ImageParser(filepath).parse('vfat')
                 elif filetype.startswith('Linux rev'):
                     Logger.debug(f"ZipExtractor: Linux rev found: {filename}")
-                    LinuxExt4ImageParser(filepath).parse()
+                    fs = LinuxExt4ImageParser(filepath).parse()
                 else:
                     pass
-
+                if isinstance(fs, FileSystem):
+                    fs_lst.append(fs)
+        return fs_lst
+    
     def get_mnt(self):
         '''get mount point of extracted file'''
         return os.path.join(module_path, 'firmwares_mnt', os.path.splitext(self.filename)[0])

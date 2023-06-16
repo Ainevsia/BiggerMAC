@@ -45,7 +45,15 @@ class FilePolicy:
 
     def __repr__(self):
         return self.original_path
-    
+
+class FileSystem:
+    def __init__(self, path: str, name: str):
+        self.name = name
+        self.path = path
+
+    def __repr__(self):
+        return self.name
+
 class FileSystemPolicy: 
     def __init__(self):
         self.files: dict(str, FilePolicy) = {}

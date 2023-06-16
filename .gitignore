@@ -3,6 +3,7 @@ firmwares/
 firmwares_extracted/
 firmwares_booting_extracted/
 firmwares_mnt/
+tests/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

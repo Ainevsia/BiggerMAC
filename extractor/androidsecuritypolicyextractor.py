@@ -1,6 +1,39 @@
 import os
 from fs.filesystempolicy import FilePolicy, FileSystemPolicy
 
+TARGET_FILESYSTEMS = [
+    {
+        "name": "boot",
+        "pattern": "*ramdisk*",            # huawei specific
+        "type": "ramdisk",
+        "required": True,
+    },
+    {
+        "name": "system",
+        "pattern": "*system*",
+        # "not_pattern": "*system_other*",
+        "type": "ext4",
+        "required": True,
+    },
+    {
+        "name": "vendor",
+        "pattern": "*vendor*",
+        "type": "ext4",
+        "required": False,
+    },
+    {
+        "name": "odm",
+        "pattern": "*odm*",
+        "type": "ext4",
+        "required": False,
+    },
+    # {
+    #     "name": "product",
+    #     "pattern": "PRODUCT*",
+    #     "type": "ext4",
+    #     "required": False,
+    # },
+]
 
 class AndroidSecurityPolicyExtractor():
     def __init__(self):
@@ -19,4 +52,7 @@ class AndroidSecurityPolicyExtractor():
                 # store the file metadata in the policy
                 fsp.add_file(fs_relative_path, file_policy)
         return fsp
-
+    
+    def extract_from_firmware(self):
+        for fs in TARGET_FILESYSTEMS:
+            match = list(filter(lambda x: fnmatch(x["name"], fs["pattern"]), filesystems))
