@@ -22,10 +22,9 @@ if __name__ == "__main__":
     fs_lst: List[FileSystem] = ext.process_file()
     Logger.debug(f"fs_lst: {fs_lst}")
     Logger.debug("Extractor done !")
-    # now collect all selinux files from the file system !
-    a = AndroidSecurityPolicyExtractor(fs_lst, 'Huawei_Mate_20').extract_from_firmware()
-    # a = AndroidSecurityPolicyExtractor(fs_lst, 'Huawei_Mate_20').walk_fs('/home/u/BiggerMAC/firmwares_mnt/Huawei_Mate_20/vendor')
-    # from IPython import embed; embed()
+    # now collect all selinux files from the file system
+    AndroidSecurityPolicyExtractor(fs_lst, 'Huawei_Mate_20').extract_from_firmware()
+
     Logger.debug("main.py done")
     
 

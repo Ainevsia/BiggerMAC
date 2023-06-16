@@ -3,6 +3,7 @@ import fnmatch
 import os
 import shutil
 from typing import Dict, List
+from android.property import AndroidPropertyList
 from fs.filesystempolicy import FilePolicy, FileSystem, FileSystemPolicy
 from utils.logger import Logger
 from utils import module_path
@@ -76,6 +77,8 @@ class AndroidSecurityPolicyExtractor():
     def __init__(self, fs_lst: List[FileSystem], name: str):
         self.fs_lst = fs_lst
         self.name = name
+        self.combined_fs: FileSystemPolicy = None
+        self.properties: AndroidPropertyList = None
 
     def walk_fs(self, toplevel_path: str) -> FileSystemPolicy:
         fsp = FileSystemPolicy()
@@ -137,6 +140,10 @@ class AndroidSecurityPolicyExtractor():
 
                 Logger.info(f'Found sepolicy file {file_name}')
 
+        self.combined_fs = combined_fs
+        self.extract_properties()
+        self.extract_init()
+
     def save_file(self, source: str, path: str, overwrite: bool = False):
         '''将文件从挂载点保存至eval汇总目录中'''
         save_path = os.path.join(module_path, 'eval', self.name, path)
@@ -153,4 +160,44 @@ class AndroidSecurityPolicyExtractor():
             return
         Logger.info(f'Saving file {save_path}')
         shutil.copyfile(source, save_path)
+
+    def extract_properties(self):
+        # 保存所有的属性文件
+        prop_files: List[str] = []
+
+        # Extract out prop files
+        prop_files += self.combined_fs.find('*.prop')
+        prop_files += self.combined_fs.find("prop.default")
+
+        props = AndroidPropertyList()
         
+        # TODO: ensure ordering of property files!
+        # Ref: https://rxwen.blogspot.com/2010/01/android-property-system.html
+        for prop_file in prop_files:
+            src = self.combined_fs.files[prop_file].original_path
+            props.from_file(src)
+            self.save_file(src, os.path.join("prop", prop_file[1:]))
+
+        if 'ro.build.version.release' not in props.prop:
+            raise Exception("Invalid firmware image '%s': missing Android version in props files" % self.asp.firmware_name)
+
+        self.properties = props
+
+    def extract_init(self):
+        rc_files = []
+
+        # Extract out prop files
+        rc_files = self.combined_fs.find("*.rc")
+
+        for rc_file in rc_files:
+            src = self.combined_fs.files[rc_file].original_path
+            self.save_file(src, os.path.join("init", rc_file[1:]))
+
+        fstab_files = self.combined_fs.find("*fstab*")
+        for fstab_file in fstab_files:
+            src = self.combined_fs.files[fstab_file].original_path
+            self.save_file(src, os.path.join("init", fstab_file[1:]))
+
+
+
+
