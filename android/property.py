@@ -12,7 +12,6 @@ class AndroidPropertyList:
         self.prop: Dict[str, str] = {}
 
     def __getitem__(self, key: str) -> str:
-        print(key)
         return self.prop[key]
 
     def __repr__(self):
@@ -51,3 +50,10 @@ class AndroidPropertyList:
             for k, v in self.prop.items():
                 fp.write("%s=%s\n" % (k, v))
 
+    def get_multi_default(self, keys: str, default: str = ""):
+        """ Try multiple keys returning the first found or the default """
+        for key in keys:
+            if key in self.prop:
+                return self.prop[key]
+
+        return default

@@ -5,6 +5,7 @@ import pickle
 import shutil
 from typing import Dict, List
 from android.property import AndroidPropertyList
+from extractor.androidsecuritypolicy import AndroidSecurityPolicy
 from fs.filesystempolicy import FilePolicy, FileSystem, FileSystemPolicy
 from utils.logger import Logger
 from utils import module_path
@@ -95,7 +96,7 @@ class AndroidSecurityPolicyExtractor():
                 fsp.add_file(fs_relative_path, file_policy)
         return fsp
     
-    def extract_from_firmware(self):
+    def extract_from_firmware(self) -> AndroidSecurityPolicy:
         fs_policies: Dict[str, FileSystemPolicy] = {}
         for fs in TARGET_FILESYSTEMS:
             # TODO: there maybe multiple filesystems that match the pattern
@@ -146,6 +147,8 @@ class AndroidSecurityPolicyExtractor():
         self.extract_init()
 
         self.save()
+
+        return AndroidSecurityPolicy(self.combined_fs, self.properties)
 
     def save_file(self, source: str, path: str, overwrite: bool = False):
         '''将文件从挂载点保存至eval汇总目录中'''
@@ -220,3 +223,6 @@ class AndroidSecurityPolicyExtractor():
         self.properties = AndroidPropertyList()
         self.properties.from_file(os.path.join(module_path, 'eval', self.name, 'all_properties.prop'))
         self.combined_fs = self.load_db("combined_fs.pkl")
+
+    def get_saved_file_path(self, path: str) -> str:
+        return os.path.join(module_path, 'eval', self.name, path)
