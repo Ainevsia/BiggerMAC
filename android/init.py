@@ -189,11 +189,19 @@ class AndroidInit():
     def read_configs(self, init_rc_base: str):
         first_init = self.read_init_rc(init_rc_base)
 
+        # TODO: read all the other init.rc files
+        init_files = self._list_mount_init_files("system")
+        init_files += self._list_mount_init_files("vendor")
+        init_files += self._list_mount_init_files("odm")
+
+        for init_file in init_files:
+            self.read_init_rc(init_file)
+
     def read_init_rc(self, path: str):
         '''Reads the init.rc file and returns a list of sections'''
         if path not in self.asp.combined_fs.files:
             raise FileNotFoundError(f"init.rc file not found at {path}")
-        rc_path = self.asp.combined_fs.files[path].original_path
+        rc_path = self.asp.combined_fs[path]
 
         with open(rc_path, 'r') as fp:
             rc_lines = fp.read()
@@ -274,8 +282,15 @@ class AndroidInit():
 
     def _add_action(self, condition: List[str], commands: List[List[str]]):
         '''on <trigger condition> <cmds>'''
-        trigger_cond = TriggerCondition(self.props, condition)
+        trigger_cond = TriggerCondition(self.asp.properties, condition)
         action = AndroidInitAction(trigger_cond)
         for cmd in commands:
             action.add_command(cmd[0], cmd[1:])
         self.actions += [action]
+    
+    def _list_mount_init_files(self, mount_point: str) -> List[str]:
+        '''List all init files in a mount point'''
+        fsp: FileSystemPolicy = self.asp.fs_policies[mount_point]
+        return [fsp[f] for f in fsp.find("/etc/init/*.rc")]
+        
+        

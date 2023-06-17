@@ -81,6 +81,12 @@ class FileSystemPolicy:
         # and printing all of them is not helpful
         return f"<FileSystemPolicy {dict(list(self.files.items())[:1])}>"
 
+    def __getitem__(self, key: str) -> str:
+        '''Get the original path of a file in the policy'''
+        if key not in self.files:
+            raise KeyError("File %s not in policy" % key)
+        return self.files[key].original_path
+
     def add_file(self, path: str, file_policy: FilePolicy):
         if path != "/" and path.endswith("/"):
             raise ValueError("Paths must be cannonicalized! %s" % path)
