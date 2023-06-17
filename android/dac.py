@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Set
 from android.capabilities import ALL_CAPABILITIES, Capabilities
 from android.sepolicy import SELinuxContext
 from utils import MODULE_PATH
@@ -7,7 +7,7 @@ class Cred():
     def __init__(self):
         self.uid = None
         self.gid = None
-        self.groups = set()
+        self.groups: Set[int] = set()
         self.sid = None # SELinuxContext
         self.cap = Capabilities()
 
@@ -46,9 +46,10 @@ class Cred():
 
         return new
 
-    def add_group(self, gid):
+    def add_group(self, gid: str):
         if isinstance(gid, int):
-            self.groups |= set([gid])
+            raise ValueError("Expected type str")
+            # self.groups |= set([gid])
         elif isinstance(gid, str):
             self.groups |= set([AID_MAP_INV[gid]])
         else:

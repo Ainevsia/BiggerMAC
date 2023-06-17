@@ -1,23 +1,129 @@
 import re
-from typing import List
+from typing import Dict, List
 from android.dac import AID_MAP_INV, Cred
-from android.property import AndroidPropertyList
+from android.property import PROPERTY_KEY, PROPERTY_VALUE, AndroidPropertyList
+from android.sepolicy import SELinuxContext
 from extractor.androidsecuritypolicy import AndroidSecurityPolicy
 from fs.filesystempolicy import FileSystemPolicy
 from utils.logger import Logger
 
 # 创建类型别名
 Section = List[List[str]]
+Option = List[str]
+
+class TriggerCondition():
+    '''
+            on <trigger> [&& <trigger>]*
+        <command>...
+    '''
+    def __init__(self, props: AndroidPropertyList, condition: List[str]):
+        self.props: AndroidPropertyList = props
+        self.raw_condition: List[str] = condition       # 保存原始的触发条件
+        self.stage_trigger: str | None = None           # 两个变量都是表示触发的条件,stage_trigger只出现一次
+        self.property_conditions: Dict[str, str] = {}
+        self._parse_trigger()
+
+    def new_stage(self, stage: str):
+        '''if the trigger <stage> triggers this event'''
+        # print(self.stage_trigger, stage)
+        # exit(1)
+        if self.stage_trigger == stage or (self.stage_trigger is None and stage == "boot"):
+            val = True
+
+            for p, v in self.property_conditions.items():
+                val = True if p in self.props and \
+                    (self.props[p] == v or v == "*") else False
+
+                if not val:
+                    break
+
+            return val
+        else:
+            return False
+
+    def setprop(self, new_prop):
+        if new_prop not in self.property_conditions:
+            return False
+
+        val = True
+
+        for p, v in self.property_conditions.items():
+            val = True if p in prop and (prop[p] == v or v == "*") else False
+
+            if not val:
+                break
+
+        return val
+
+    def _parse_trigger(self):
+        expect_and = False  # flag to indicate if we expect an &&
+        for cond in self.raw_condition:
+            if cond == "&&" and not expect_and:
+                Logger.warning("Trigger condition: unexpected &&")
+                return
+            elif cond != "&&" and expect_and:
+                Logger.warning("Trigger condition: expected &&")
+                return
+
+            expect_and = False
+
+            if cond.startswith("property:"):
+                cond = cond[len("property:"):]  # 去掉property:前缀
+                match = re.match(r'(%s)=(%s)' % (PROPERTY_KEY.pattern, PROPERTY_VALUE.pattern), cond)
+
+                if not match:
+                    Logger.warning("Trigger condition %s is invalid", cond)
+                else:
+                    prop, value = match.groups()
+                    self.property_conditions[prop] = value
+
+                expect_and = True
+            elif cond == "&&":
+                pass
+            else:
+                self.stage_trigger = cond   # only once I promise it 
+                expect_and = True
+
+    def __repr__(self):
+        triggers = []
+
+        if self.stage_trigger:
+            triggers += [str(self.stage_trigger)]
+
+        for k, v in self.property_conditions.items():
+            triggers += ["%s=%s" % (k, v)]
+
+        return "<TriggerCondition %s>" % (" && ".join(triggers))
+
+class AndroidInitAction():
+    '''on <cond> <cmds> ? TODO explain it'''
+    def __init__(self, condition: TriggerCondition):
+        self.condition: TriggerCondition = condition
+        self.commands: List[List[str]] = []
+
+    def add_command(self, cmd: str, args: List[str]):
+        self.commands += [[cmd] + args]
+
+    def __repr__(self):
+        return "<AndroidInitAction %d commands on %s>" % (len(self.commands), repr(self.condition))
+
 
 class AndroidInitService():
     def __init__(self, name: str, args: List[str]):
+        self.service_class: str = "default"
+        self.service_groups: List[str] = []
         self.name = name
         self.args = args
+        self.options: List[Option] = []
 
         self.cred: Cred = Cred()
         # default uid/gid is root!
         self.cred.uid = 0
         self.cred.gid = 0
+
+        
+        self.disabled = False
+        self.oneshot = False
     
     def add_option(self, option: str, args: List[str]):
         if option == "user":
@@ -30,13 +136,13 @@ class AndroidInitService():
         elif option == "group":
             self.cred.gid = AID_MAP_INV.get(args[0], 9999)
             if self.cred.gid == 9999:
-                log.warning("Missing AID definition for group: %s", args[0])
+                Logger.warning("Missing AID definition for group: %s", args[0])
 
             for group in args[1:]:
                 try:
                     self.cred.add_group(group)
                 except KeyError:
-                    log.debug("Unabled to find AID mapping for group %s", group)
+                    Logger.warning("Unabled to find AID mapping for group %s", group)
         elif option == "disabled":
             self.disabled = True
         elif option == "class":
@@ -55,7 +161,8 @@ class AndroidInitService():
 class AndroidInit():
     def __init__(self, asp: AndroidSecurityPolicy):
         self.asp = asp
-        self.services = {} # [str] -> AndroidInitService
+        self.services: Dict[str, AndroidInitService] = {} # [str] -> AndroidInitService
+        self.actions: List[AndroidInitAction] = []
     
     def determine_hardware(self) -> str:
         rohw = 'ro.hardware'
@@ -145,7 +252,7 @@ class AndroidInit():
                 condition = args
                 commands = body
 
-                # self._add_action(condition, commands)
+                self._add_action(condition, commands)
             else:
                 raise ValueError("Unknown section type %s" % (action))
         
@@ -155,10 +262,20 @@ class AndroidInit():
 
     def _add_service(self, name: str, args: List[str], body: Section):
         # TODO: handle override
-        if name in self.services:
-            return
+        if name in self.services: return
         service: AndroidInitService = AndroidInitService(name, args)
+
         for opt in body:
             opt_name = opt[0]   # str
             opt_args = opt[1:]  # [str]
             service.add_option(opt_name, opt_args)
+
+        self.services[name] = service   # add to AndroidInit.services dict
+
+    def _add_action(self, condition: List[str], commands: List[List[str]]):
+        '''on <trigger condition> <cmds>'''
+        trigger_cond = TriggerCondition(self.props, condition)
+        action = AndroidInitAction(trigger_cond)
+        for cmd in commands:
+            action.add_command(cmd[0], cmd[1:])
+        self.actions += [action]

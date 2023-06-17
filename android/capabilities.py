@@ -1,3 +1,6 @@
+from typing import Dict, List, Set
+
+
 class Capabilities():
     def __init__(self):
         # these are sets of strings, which make them easier to work with
@@ -33,12 +36,12 @@ class Capabilities():
 
     def add(self, set_name: str, cap: str):
         name_mapping = {
-                "selinux": self.selinux,
-                "inherited": self.inherited,
-                "effective": self.effective,
-                "ambient": self.ambient,
-                "permitted": self.permitted,
-                "bounding": self.bounding
+            "selinux": self.selinux,
+            "inherited": self.inherited,
+            "effective": self.effective,
+            "ambient": self.ambient,
+            "permitted": self.permitted,
+            "bounding": self.bounding
         }
 
         if set_name not in name_mapping:
@@ -49,20 +52,21 @@ class Capabilities():
     def selinux(self, cap):
         self._add_cap(cap, self.selinux)
 
-    def _add_cap(self, cap, capset):
+    def _add_cap(self, cap: str, capset: Set[int]):
+        '''Add a capability to a capset'''
         assert isinstance(cap, str)
         Capabilities.name_to_bit(cap)
         capset |= set([Capabilities._cannonicalize_name(cap)])
 
     @staticmethod
-    def _cannonicalize_name(name):
+    def _cannonicalize_name(name: str):
         if name.lower().startswith("cap_"):
             return name.upper()
         else:
-            return ("CAP_"+name).upper()
+            return f"CAP_{name}".upper()
 
     @staticmethod
-    def name_to_bit(name):
+    def name_to_bit(name: str):
         return CAPABILITIES_INV[Capabilities._cannonicalize_name(name)]
 
     @staticmethod
@@ -85,7 +89,7 @@ class Capabilities():
 
         return output
 
-CAPABILITIES = {
+CAPABILITIES: Dict[int, str] = {
     0: "CAP_CHOWN",
     1: "CAP_DAC_OVERRIDE",
     2: "CAP_DAC_READ_SEARCH",
@@ -129,6 +133,6 @@ CAPABILITIES = {
     38: "CAP_PERF_EVENT",   # huawei specific
 }
 
-CAPABILITIES_INV = dict([[v,k] for k,v in CAPABILITIES.items()])
-ALL_CAPABILITIES = list(CAPABILITIES.values())
+CAPABILITIES_INV: Dict[str, int] = dict([[v,k] for k,v in CAPABILITIES.items()])
+ALL_CAPABILITIES: List[str] = list(CAPABILITIES.values())
 ALL_CAPABILITY_BITS = list(range(len(CAPABILITIES)))
