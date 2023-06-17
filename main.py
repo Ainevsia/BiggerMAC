@@ -34,8 +34,8 @@ if __name__ == "__main__":
     init = AndroidInit(asp)
     hw = init.determine_hardware()
     Logger.debug(f"hw: {hw}")
-    init.read_configs("/init.rc")
-
+    init.read_configs()
+    init.boot_system()
 
     
     Logger.debug("main.py done")

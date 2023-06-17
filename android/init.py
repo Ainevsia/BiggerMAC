@@ -10,8 +10,9 @@ from utils.logger import Logger
 # 创建类型别名
 Section = List[List[str]]
 Option = List[str]
+Command = List[str]
 
-class TriggerCondition():
+class TriggerCondition:
     '''
             on <trigger> [&& <trigger>]*
         <command>...
@@ -23,21 +24,13 @@ class TriggerCondition():
         self.property_conditions: Dict[str, str] = {}
         self._parse_trigger()
 
-    def new_stage(self, stage: str):
-        '''if the trigger <stage> triggers this event'''
-        # print(self.stage_trigger, stage)
-        # exit(1)
+    def new_stage(self, stage: str) -> bool:
+        '''determine if the trigger <stage> should trigger this event'''
         if self.stage_trigger == stage or (self.stage_trigger is None and stage == "boot"):
-            val = True
-
-            for p, v in self.property_conditions.items():
-                val = True if p in self.props and \
-                    (self.props[p] == v or v == "*") else False
-
-                if not val:
-                    break
-
-            return val
+            for p, v in self.property_conditions.items():   # 遍历所有的属性条件
+                cont = True if p in self.props and (self.props[p] == v or v == "*") else False
+                if not cont: return False
+            return True
         else:
             return False
 
@@ -95,11 +88,11 @@ class TriggerCondition():
 
         return "<TriggerCondition %s>" % (" && ".join(triggers))
 
-class AndroidInitAction():
+class AndroidInitAction:
     '''on <cond> <cmds> ? TODO explain it'''
     def __init__(self, condition: TriggerCondition):
         self.condition: TriggerCondition = condition
-        self.commands: List[List[str]] = []
+        self.commands: List[Command] = []
 
     def add_command(self, cmd: str, args: List[str]):
         self.commands += [[cmd] + args]
@@ -108,7 +101,7 @@ class AndroidInitAction():
         return "<AndroidInitAction %d commands on %s>" % (len(self.commands), repr(self.condition))
 
 
-class AndroidInitService():
+class AndroidInitService:
     def __init__(self, name: str, args: List[str]):
         self.service_class: str = "default"
         self.service_groups: List[str] = []
@@ -158,11 +151,14 @@ class AndroidInitService():
             self.options += [[option] + args]
 
 
-class AndroidInit():
+class AndroidInit:
     def __init__(self, asp: AndroidSecurityPolicy):
         self.asp = asp
         self.services: Dict[str, AndroidInitService] = {} # [str] -> AndroidInitService
         self.actions: List[AndroidInitAction] = []
+
+         # Runtime events
+        self.queue: List[AndroidInitAction] = [] 
     
     def determine_hardware(self) -> str:
         rohw = 'ro.hardware'
@@ -186,7 +182,7 @@ class AndroidInit():
             self.asp.properties[rohw] = ro_hardware_guess
         return self.asp.properties[rohw]
     
-    def read_configs(self, init_rc_base: str):
+    def read_configs(self, init_rc_base: str = "/init.rc"):
         first_init = self.read_init_rc(init_rc_base)
 
         # TODO: read all the other init.rc files
@@ -293,4 +289,172 @@ class AndroidInit():
         fsp: FileSystemPolicy = self.asp.fs_policies[mount_point]
         return [fsp[f] for f in fsp.find("/etc/init/*.rc")]
         
-        
+    def boot_system(self):
+        # this is used to bypass dm-verity/FDE on AOSP ? TODO: verify
+        self.asp.properties["vold.decrypt"] = "trigger_post_fs_data"
+        self.new_stage_trigger('early-init')
+
+    def new_stage_trigger(self, stage: str):
+        for action in self.actions:
+            if action.condition.new_stage(stage):   # if trigger
+                self.queue_action(action)           # queue action
+
+    def queue_action(self, action: AndroidInitAction):
+        '''Queue an action to be executed'''
+        if action in self.queue: return # do not double queue actions
+        self.queue.push(action)
+
+    def main_loop(self):
+        '''Main loop of the init process (executes queued actions) '''
+        while len(self.queue):
+            action = self.queue.pop(0)
+            for cmd in action.commands:
+                self.execute(cmd[0], cmd[1:])
+    
+    def execute(self, cmd: str, args: List[str]):
+        if cmd == "trigger":
+            assert len(args) == 1
+            self.new_stage_trigger(args[0]) # trigger a new stage
+        elif cmd == "mkdir":
+            '''mkdir <path> [mode] [owner] [group]'''
+            path = args[0]
+            user = 0
+            group = 0
+            perm = 0o755    # default permission is 755 (rwxr-xr-x)
+
+            if len(args) > 1:
+                try:
+                    perm = int(args[1], 8)
+                except ValueError:
+                    Logger.warning("Malformed mkdir: %s", args)
+                    return
+            if len(args) > 2:
+                user = AID_MAP_INV.get(args[2], 9999)
+            if len(args) > 3:
+                group = AID_MAP_INV.get(args[3], 9999)
+            if user == 9999:
+                Logger.warning("Missing AID definition for user: %s", args[2])
+            if group == 9999:
+                Logger.warning("Missing AID definition for group: %s", args[3])
+
+            self.asp.combined_fs.mkdir(os.path.normpath(path), user, group, perm)
+        elif cmd == "chown":
+            if len(args) < 3:
+                log.warning("Chown not enough arguments")
+                return
+
+            user = AID_MAP_INV.get(args[0], 9999)
+            group = AID_MAP_INV.get(args[1], 9999)
+            if user == 9999:
+                log.warning("Missing AID definition for user: %s", args[0])
+            if group == 9999:
+                log.warning("Missing AID definition for group: %s", args[1])
+
+            path = args[2]
+
+            # Try to instantiate it anyways
+            if path not in self.root_fs.files:
+                if path.startswith("/dev"):
+                    mode = 0o0600 | stat.S_IFCHR
+                elif path.startswith("/sys"):
+                    mode = 0o0644 | stat.S_IFREG
+                else:
+                    return
+
+                policy = {
+                    "original_path": None,
+                    "user": user,
+                    "group": group,
+                    "perms": mode,
+                    "size": 0,
+                    "link_path": "",
+                    "capabilities": None,
+                    "selinux": None,
+                }
+
+                self._add_uevent_file(path, policy)
+
+            self.root_fs.chown(path, user, group)
+        elif cmd == "chmod":
+            mode = int(args[0], 8)
+            path = args[1]
+
+            # Try to instantiate it anyways
+            if path not in self.root_fs.files:
+                if path.startswith("/dev"):
+                    mode = mode | stat.S_IFCHR
+                elif path.startswith("/sys"):
+                    mode = mode | stat.S_IFREG
+                else:
+                    return
+
+                policy = {
+                    "original_path": None,
+                    "user": AID_MAP_INV.get("root", 9999),
+                    "group": AID_MAP_INV.get("root", 9999),
+                    "perms": mode,
+                    "size": 0,
+                    "link_path": "",
+                    "capabilities": None,
+                    "selinux": None,
+                }
+
+                self._add_uevent_file(path, policy)
+
+            self.root_fs.chmod(path, mode)
+        elif cmd == "copy":
+            pass
+        elif cmd == "rm":
+            pass
+        elif cmd == "rmdir":
+            pass
+        elif cmd == "setprop":
+            pass
+        elif cmd == "enable":
+            if len(args) < 1:
+                log.warning("Enable needs an argument")
+                return
+
+            service = args[0]
+
+            if service in self.services:
+                if self.services[service].disabled:
+                    log.info("Enabling service %s", service)
+                    self.services[service].disabled = False
+        elif cmd == "write":
+            pass
+        elif cmd == "mount":
+            path = args[2]
+            fstype = args[0]
+            device = args[1]
+            options = []
+            if len(args) > 3:
+                for o in args[3:]:
+                    options += o.split(",")
+
+            if path in self.root_fs.mount_points:
+                return
+
+            self.root_fs.add_mount_point(path, fstype, device, options)
+        elif cmd == "mount_all":
+            path = args[0]
+            late_mount = "--late" in args
+
+            try:
+                with open(self._init_rel_path(self.expand_properties(path)), 'r') as fp:
+                    fstab_data = fp.read()
+                    entries = self.parse_fstab(fstab_data)
+            except IOError:
+                log.error("Unable to open fstab file %s", self._init_rel_path(self.expand_properties(path)))#path)
+                return
+
+            for entry in entries:
+                if late_mount and "latemount" not in entry["fsmgroptions"]:
+                    continue
+                if not late_mount and "latemount" in entry["fsmgroptions"]:
+                    continue
+
+                if entry["path"] in self.root_fs.mount_points:
+                    continue
+
+                self.root_fs.add_mount_point(entry["path"], entry["fstype"], entry["device"], entry["options"])

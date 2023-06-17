@@ -48,6 +48,20 @@ class FilePolicy:
     def __repr__(self):
         return self.original_path
 
+    @staticmethod
+    # 创建一个原系统中不存在的伪文件
+    def create_pseudo_file(user: int, group: int, perm: int) -> Self:
+        fp = FilePolicy.__new__(FilePolicy)
+        fp.original_path = None
+        fp.user = user
+        fp.group = group
+        fp.perms = perm
+        fp.size = 4096
+        fp.link_path = ""
+        fp.capabilities = None
+        fp.selinux = None
+        return fp
+
 class MountPoint():
     def __init__(self, type: str, device: str, options: List[str]):
         self.type = type
@@ -117,3 +131,14 @@ class FileSystemPolicy:
                 self.files[mount_point] = v
                 continue
             self.add_file(os.path.join(mount_point, fn), v)
+    
+    def mkdir(self, path: str, user: int = 0, group: int = 0, perm: int = 0o755):
+        fp: FilePolicy = FilePolicy.create_pseudo_file(user, group, (perm & 0o7777) | stat.S_IFDIR)
+        self.add_or_update_file(path, fp)
+        
+    def add_or_update_file(self, path, policy_info: FilePolicy):
+        if path != "/" and path.endswith("/"): raise ValueError("Paths must be cannonicalized! %s" % path)
+        self.files[path] = policy_info
+
+
+

@@ -40,3 +40,6 @@ pip install python-magic
 1. Extract Zip files
 2. Parse UPDATE.APP
 3. use Android sparse image
+4. to emulate the behavior of the Android init process
+    - parse all the init.rc files available in the system
+    - emulate the behavior of the init process in `boot_system`
