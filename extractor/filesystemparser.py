@@ -1,6 +1,6 @@
 import shutil
 from fs.filesystempolicy import FileSystem
-from utils import module_path, split_path_all
+from utils import MODULE_PATH, split_path_all
 from utils.logger import Logger
 from utils.shellcommand import ShellCommandExecutor
 import os
@@ -20,10 +20,10 @@ class FilesystemParser:
             raise FileNotFoundError(f"FilesystemParser: firmwares_extracted not found: {self.filepath}")
         self.firmware_name = path_lst[-1]
         Logger.info(f"FilesystemParser: firmware_name: {self.firmware_name}")
-        self.mount_point = os.path.join(module_path, 'firmwares_mnt', self.firmware_name)
+        self.mount_point = os.path.join(MODULE_PATH, 'firmwares_mnt', self.firmware_name)
         if not os.path.exists(self.mount_point):
             os.makedirs(self.mount_point)
-        self.booting_extraced =  os.path.join(module_path, 'firmwares_booting_extracted', self.firmware_name)
+        self.booting_extraced =  os.path.join(MODULE_PATH, 'firmwares_booting_extracted', self.firmware_name)
         if not os.path.exists(self.booting_extraced):
             os.makedirs(self.booting_extraced)
         self.filename = os.path.splitext(os.path.basename(self.filepath))[0]
@@ -34,7 +34,7 @@ class AndroidSparseImageParser(FilesystemParser):
     
     def parse(self) -> FileSystem:
         '''use simg2img to convert sparse image to raw image'''
-        simg2img = os.path.join(module_path, 'externals', 'android-simg2img', 'simg2img')
+        simg2img = os.path.join(MODULE_PATH, 'externals', 'android-simg2img', 'simg2img')
         if not os.path.exists(simg2img):
             raise FileNotFoundError(f"AndroidSparseImageParser: simg2img not found: {simg2img}")
         ext4_file_path = os.path.splitext(self.filepath)[0] + '.ext4'
@@ -81,17 +81,17 @@ class AndroidBootingParser(FilesystemParser):
 
     def parse(self) -> FileSystem:
         '''use imgtool'''
-        imjtool = os.path.join(module_path, 'externals', 'imjtool', 'imjtool.ELF64')
+        imjtool = os.path.join(MODULE_PATH, 'externals', 'imjtool', 'imjtool.ELF64')
         if not os.path.exists(imjtool):
             raise FileNotFoundError(f"AndroidBootingParse: imjtool not found: {imjtool}")
-        lz4 = os.path.join(module_path, 'externals', 'lz4', 'lz4')
+        lz4 = os.path.join(MODULE_PATH, 'externals', 'lz4', 'lz4')
         if not os.path.exists(lz4):
             raise FileNotFoundError(f"AndroidBootingParse: lz4 not found: {lz4}")
         os.chdir(self.booting_extraced)
         if not os.path.exists(os.path.join(self.booting_extraced, f'{self.filename}-extracted')):
             ShellCommandExecutor([imjtool, self.filepath, 'extract']).execute()
             os.rename(os.path.join(self.booting_extraced, 'extracted'), os.path.join(self.booting_extraced, f'{self.filename}-extracted'))
-        os.chdir(module_path)
+        os.chdir(MODULE_PATH)
         ramdisk_file_path = os.path.join(self.booting_extraced, f'{self.filename}-extracted', 'ramdisk')
         ramdisk_out_path = os.path.join(self.booting_extraced, f'{self.filename}-ramdisk.cpio')
         import magic

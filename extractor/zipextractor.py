@@ -3,7 +3,7 @@ from extractor.filesystemparser import AndroidSparseImageParser, LinuxExt4ImageP
 from fs.filesystempolicy import FileSystem
 from utils.logger import Logger
 from zipfile import ZipFile
-from utils import module_path
+from utils import MODULE_PATH
 import os
 
 class ZipExtractor:
@@ -19,12 +19,12 @@ class ZipExtractor:
         if not hasattr(self, 'filename'):
             Logger.error("ZipExtractor: no filename")
             return
-        Logger.debug(f"ZipExtractor: module_path: {module_path}")
-        zip_file_path_in = os.path.join(module_path, 'firmwares', self.filename)
+        Logger.debug(f"ZipExtractor: module_path: {MODULE_PATH}")
+        zip_file_path_in = os.path.join(MODULE_PATH, 'firmwares', self.filename)
         if not os.path.exists(zip_file_path_in):
             Logger.error(f"ZipExtractor: zip file not found: {zip_file_path_in}")
             return
-        zip_file_path_out = os.path.join(module_path, 'firmwares_extracted', os.path.splitext(self.filename)[0])
+        zip_file_path_out = os.path.join(MODULE_PATH, 'firmwares_extracted', os.path.splitext(self.filename)[0])
         Logger.debug(f"ZipExtractor: zip_file_path_out: {zip_file_path_out}")
         self.extracted_path = zip_file_path_out
         if not os.path.exists(zip_file_path_out):
@@ -100,4 +100,4 @@ class ZipExtractor:
     
     def get_mnt(self):
         '''get mount point of extracted file'''
-        return os.path.join(module_path, 'firmwares_mnt', os.path.splitext(self.filename)[0])
+        return os.path.join(MODULE_PATH, 'firmwares_mnt', os.path.splitext(self.filename)[0])

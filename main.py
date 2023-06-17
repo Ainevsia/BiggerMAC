@@ -8,7 +8,7 @@ from extractor.androidsecuritypolicyextractor import AndroidSecurityPolicyExtrac
 from extractor.zipextractor import ZipExtractor
 from fs.filecontext import read_file_contexts
 from fs.filesystempolicy import FileSystem
-from utils import check_root, set_working_directory, module_path
+from utils import check_root, set_working_directory, MODULE_PATH
 from utils.logger import Logger
 import argparse
 
@@ -34,7 +34,7 @@ if __name__ == "__main__":
     init = AndroidInit(asp)
     hw = init.determine_hardware()
     Logger.debug(f"hw: {hw}")
-
+    init.read_configs("/init.rc")
 
 
     

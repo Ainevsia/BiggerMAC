@@ -8,7 +8,7 @@ from android.property import AndroidPropertyList
 from extractor.androidsecuritypolicy import AndroidSecurityPolicy
 from fs.filesystempolicy import FilePolicy, FileSystem, FileSystemPolicy
 from utils.logger import Logger
-from utils import module_path
+from utils import MODULE_PATH
 
 TARGET_FILESYSTEMS = [
     {
@@ -152,7 +152,7 @@ class AndroidSecurityPolicyExtractor():
 
     def save_file(self, source: str, path: str, overwrite: bool = False):
         '''将文件从挂载点保存至eval汇总目录中'''
-        save_path = os.path.join(module_path, 'eval', self.name, path)
+        save_path = os.path.join(MODULE_PATH, 'eval', self.name, path)
         if not os.path.exists(os.path.dirname(save_path)):
             os.makedirs(os.path.dirname(save_path))
         if not os.path.exists(source):
@@ -205,12 +205,12 @@ class AndroidSecurityPolicyExtractor():
             self.save_file(src, os.path.join("init", fstab_file[1:]))
 
     def save(self):
-        self.properties.to_file(os.path.join(module_path, 'eval', self.name, 'all_properties.prop'))
+        self.properties.to_file(os.path.join(MODULE_PATH, 'eval', self.name, 'all_properties.prop'))
         Logger.info(f'Saved all properties')
         self.save_db(self.combined_fs, "combined_fs.pkl")
 
     def save_db(self, obj: object, name: str):
-        db_dir = os.path.join(module_path, 'eval', self.name, "db")
+        db_dir = os.path.join(MODULE_PATH, 'eval', self.name, "db")
         if not os.path.exists(db_dir):
             os.makedirs(db_dir)
         if not os.access(db_dir, os.W_OK):
@@ -221,5 +221,5 @@ class AndroidSecurityPolicyExtractor():
 
     def load(self):
         self.properties = AndroidPropertyList()
-        self.properties.from_file(os.path.join(module_path, 'eval', self.name, 'all_properties.prop'))
+        self.properties.from_file(os.path.join(MODULE_PATH, 'eval', self.name, 'all_properties.prop'))
         self.combined_fs = self.load_db("combined_fs.pkl")

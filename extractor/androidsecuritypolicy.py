@@ -2,7 +2,7 @@ import os
 from typing import List
 from android.property import AndroidPropertyList
 from fs.filesystempolicy import FileSystemPolicy
-from utils import module_path
+from utils import MODULE_PATH
 
 class AndroidSecurityPolicy:
     def __init__(self, combined_fs: FileSystemPolicy, properties: AndroidPropertyList, name: str, fs_policies: List[FileSystemPolicy] = []):
@@ -59,4 +59,4 @@ class AndroidSecurityPolicy:
         return image_data
     
     def get_saved_file_path(self, path: str) -> str:
-        return os.path.join(module_path, 'eval', self.name, path)
+        return os.path.join(MODULE_PATH, 'eval', self.name, path)

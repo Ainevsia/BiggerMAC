@@ -2,12 +2,12 @@
 import os
 from typing import List
 from utils.logger import Logger
-module_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODULE_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def set_working_directory():
     '''Set a new directory as the current working directory'''
-    Logger.debug(f"set_working_directory: {module_path}")
-    os.chdir(module_path)
+    Logger.debug(f"set_working_directory: {MODULE_PATH}")
+    os.chdir(MODULE_PATH)
 
 def check_root():
     if os.geteuid() != 0:
