@@ -2,6 +2,8 @@
 
 import os
 from typing import List
+from android.init import AndroidInit
+from extractor.androidsecuritypolicy import AndroidSecurityPolicy
 from extractor.androidsecuritypolicyextractor import AndroidSecurityPolicyExtractor
 from extractor.zipextractor import ZipExtractor
 from fs.filecontext import read_file_contexts
@@ -24,14 +26,26 @@ if __name__ == "__main__":
     Logger.debug(f"fs_lst: {fs_lst}")
     Logger.debug("Extractor done !")
     # now collect all selinux files from the file system
-    asp = AndroidSecurityPolicyExtractor(fs_lst, 'Huawei_Mate_20').extract_from_firmware()
+    asp: AndroidSecurityPolicy = AndroidSecurityPolicyExtractor(fs_lst, 'Huawei_Mate_20').extract_from_firmware()
     major, minor, revision = asp.get_android_version()
     if major >= 9:
         file_contexts = read_file_contexts(asp.get_saved_file_path("plat_file_contexts"))
         file_contexts += read_file_contexts(asp.get_saved_file_path("vendor_file_contexts"))
+    init = AndroidInit(asp)
+    hw = init.determine_hardware()
+    Logger.debug(f"hw: {hw}")
+
+
+
     
     Logger.debug("main.py done")
-    
+
+def main_process():
+    '''开始进行对策略文件的分析'''
+    init = AndroidInit()
+
+
+
 
 
 

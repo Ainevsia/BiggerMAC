@@ -148,7 +148,7 @@ class AndroidSecurityPolicyExtractor():
 
         self.save()
 
-        return AndroidSecurityPolicy(self.combined_fs, self.properties)
+        return AndroidSecurityPolicy(self.combined_fs, self.properties, self.name, fs_policies)
 
     def save_file(self, source: str, path: str, overwrite: bool = False):
         '''将文件从挂载点保存至eval汇总目录中'''
@@ -223,6 +223,3 @@ class AndroidSecurityPolicyExtractor():
         self.properties = AndroidPropertyList()
         self.properties.from_file(os.path.join(module_path, 'eval', self.name, 'all_properties.prop'))
         self.combined_fs = self.load_db("combined_fs.pkl")
-
-    def get_saved_file_path(self, path: str) -> str:
-        return os.path.join(module_path, 'eval', self.name, path)

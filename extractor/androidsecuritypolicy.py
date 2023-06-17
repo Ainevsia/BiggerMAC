@@ -1,12 +1,15 @@
+import os
 from typing import List
 from android.property import AndroidPropertyList
 from fs.filesystempolicy import FileSystemPolicy
-
+from utils import module_path
 
 class AndroidSecurityPolicy:
-    def __init__(self, combined_fs: FileSystemPolicy, properties: AndroidPropertyList):
+    def __init__(self, combined_fs: FileSystemPolicy, properties: AndroidPropertyList, name: str, fs_policies: List[FileSystemPolicy] = []):
         self.combined_fs = combined_fs
         self.properties = properties
+        self.name = name
+        self.fs_policies = fs_policies
     
     def get_android_version(self) -> List[int]:
         android_version: List[int] = list(map(int, self.get_properties()['properties']['android_version'].split('.')))
@@ -17,7 +20,6 @@ class AndroidSecurityPolicy:
         # pad out the version tokens if they dont exist
         android_version = android_version + [0]*(3-len(android_version))
         return android_version
-
 
     def get_properties(self):
         '''获取一个综合的信息'''
@@ -55,3 +57,6 @@ class AndroidSecurityPolicy:
         }
 
         return image_data
+    
+    def get_saved_file_path(self, path: str) -> str:
+        return os.path.join(module_path, 'eval', self.name, path)

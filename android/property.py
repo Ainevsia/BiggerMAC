@@ -13,6 +13,12 @@ class AndroidPropertyList:
 
     def __getitem__(self, key: str) -> str:
         return self.prop[key]
+    
+    def __setitem__(self, key: str, value: str):
+        self.prop[key] = value
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.prop
 
     def __repr__(self):
         res = object.__repr__(self) + '\n'
