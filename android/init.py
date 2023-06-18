@@ -122,7 +122,7 @@ class AndroidInitService:
                 try:
                     self.cred.add_group(group)
                 except KeyError:
-                    Logger.warning("Unabled to find AID mapping for group %s", group)
+                    Logger.warning(f"Missing AID definition for group: {group}")
         elif option == "disabled":
             self.disabled = True
         elif option == "class":
@@ -171,7 +171,6 @@ class AndroidInit:
     def read_configs(self, init_rc_base: str = "/init.rc"):
         first_init = self.read_init_rc(init_rc_base)
 
-        # TODO: read all the other init.rc files
         init_files = self._list_mount_init_files("system")
         init_files += self._list_mount_init_files("vendor")
         init_files += self._list_mount_init_files("odm")
@@ -181,7 +180,8 @@ class AndroidInit:
 
     def read_init_rc(self, path: str):
         '''Reads the init.rc file and returns a list of sections'''
-        if path not in self.asp.combined_fs.files:
+        if path not in self.asp.combined_fs:
+            from IPython import embed; embed()  
             raise FileNotFoundError(f"init.rc file not found at {path}")
         rc_path = self.asp.combined_fs[path]
 
@@ -273,12 +273,77 @@ class AndroidInit:
     def _list_mount_init_files(self, mount_point: str) -> List[str]:
         '''List all init files in a mount point'''
         fsp: FileSystemPolicy = self.asp.fs_policies[mount_point]
-        return [fsp[f] for f in fsp.find("/etc/init/*.rc")]
+        # If a segment is an absolute path, then all previous segments are ignored and 
+        # joining continues from the absolute path segment.
+        # get rid of the first / in the path
+        return [os.path.join('/', mount_point, f[1:]) for f in fsp.find("/etc/init/*.rc")]
         
     def boot_system(self):
         # this is used to bypass dm-verity/FDE on AOSP ? TODO: verify
         self.asp.properties["vold.decrypt"] = "trigger_post_fs_data"
         self.new_stage_trigger('early-init')
+        self.main_loop()
+
+        # TODO: android version check for this
+        self.asp.combined_fs.add_mount_point("/proc", "proc", "proc", ["rw,relatime,gid=3009,hidepid=2".split(",")])
+        self.asp.combined_fs.add_mount_point("/sys", "sysfs", "sysfs", ["rw","seclabel","relatime"])
+
+        uevent_files = [
+            "/ueventd.rc", "/vendor/ueventd.rc", "/odm/ueventd.rc",
+            "/ueventd." + self.asp.properties.get_default("ro.hardware") + ".rc"]
+
+        for f in uevent_files:
+            try:
+                self.read_uevent_rc(f)
+            except IOError:
+                pass
+
+        self.new_stage_trigger('init')
+        self.new_stage_trigger('late-init')
+
+        # other stages will be handled by internal actions
+        self.main_loop()
+
+    def read_uevent_rc(self, path: str):
+        if path not in self.asp.combined_fs: return
+        rc_path: str = self._init_rel_path(path)
+        rc_lines = ""
+
+        with open(rc_path, 'r') as fp:
+            rc_lines = fp.read()
+
+        for line in rc_lines.split("\n"):
+            if re.match('^(\s*#)|(\s*$)', line): continue
+            line = re.sub('\s+', " ", line)
+            components = list(filter(lambda x: len(x) > 0, line.split(" ")))
+            
+            fn = components[0]
+
+            fn_expand = ""
+            if fn.startswith("/dev") and len(components) == 4:
+                mode = int(components[1], 8) | stat.S_IFCHR
+                user = components[2]
+                group = components[3]
+
+                user = AID_MAP_INV.get(user, 9999)
+                group = AID_MAP_INV.get(group, 9999)
+
+                fn_expand = fn
+            elif fn.startswith("/sys") and len(components) == 5:
+                node_name = components[1]
+                mode = int(components[2], 8) | stat.S_IFREG
+                user = components[3]
+                group = components[4]
+
+                user = AID_MAP_INV.get(user, 9999)
+                group = AID_MAP_INV.get(group, 9999)
+
+                fn_expand = fn + "/" + node_name
+            else:
+                continue
+
+            file_policy = FilePolicy.create_pseudo_file(mode, user, group)
+            self._add_uevent_file(fn_expand, file_policy)
 
     def new_stage_trigger(self, stage: str):
         for action in self.actions:
@@ -288,7 +353,7 @@ class AndroidInit:
     def queue_action(self, action: AndroidInitAction):
         '''Queue an action to be executed'''
         if action in self.queue: return # do not double queue actions
-        self.queue.push(action)
+        self.queue.append(action)
 
     def main_loop(self):
         '''Main loop of the init process (executes queued actions) '''
@@ -354,6 +419,8 @@ class AndroidInit:
         return self.asp.combined_fs[path]
 
     def execute(self, cmd: str, args: List[str]):
+        '''Execute a command'''
+        Logger.debug("Executing command: %s %s", cmd, args)
         if cmd == "trigger":
             assert len(args) == 1
             self.new_stage_trigger(args[0]) # trigger a new stage

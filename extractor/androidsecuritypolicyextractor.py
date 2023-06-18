@@ -192,7 +192,7 @@ class AndroidSecurityPolicyExtractor():
     def extract_init(self):
         rc_files = []
 
-        # Extract out prop files
+        # Extract out init files
         rc_files = self.combined_fs.find("*.rc")
 
         for rc_file in rc_files:

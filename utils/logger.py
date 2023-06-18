@@ -5,25 +5,25 @@ _global_logger = logging.getLogger(__name__)
 
 class Logger:
     @staticmethod
-    def info(msg: str):
-        _global_logger.info(msg)
+    def info(msg: str, *args, **kwargs):
+        _global_logger.info(msg, *args, **kwargs)
     
     @staticmethod
-    def debug(msg: str):
-        _global_logger.debug(msg)
+    def debug(msg: str, *args, **kwargs):
+        _global_logger.debug(msg, *args, **kwargs)
 
     @staticmethod
-    def warning(msg: str):
-        _global_logger.warning(msg)
+    def warning(msg: str, *args, **kwargs):
+        _global_logger.warning(msg, *args, **kwargs)
 
     @staticmethod
-    def error(msg: str):
-        _global_logger.error(msg)
+    def error(msg: str, *args, **kwargs):
+        _global_logger.error(msg, *args, **kwargs)
 
     @staticmethod
-    def critical(msg: str):
-        _global_logger.critical(msg)
+    def critical(msg: str, *args, **kwargs):
+        _global_logger.critical(msg, *args, **kwargs)
     
     @staticmethod
-    def exception(msg: str):
-        _global_logger.exception(msg)
+    def exception(msg: str, *args, **kwargs):
+        _global_logger.exception(msg, *args, **kwargs)
