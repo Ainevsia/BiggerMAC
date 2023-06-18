@@ -49,7 +49,7 @@ if __name__ == "__main__":
     print(sepolicy)
 
 
-
+    from IPython import embed; embed()
     Logger.debug("main.py done")
 
 def main_process():

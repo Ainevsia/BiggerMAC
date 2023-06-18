@@ -35,6 +35,53 @@ source venv/bin/activate    # activate this virtual environment
 pip install python-magic
 ```
 
+- install `setools` (depend on selinux project)
+
+```sh
+# For C libraries and programs
+sudo apt install bison flex gawk gcc gettext make libaudit-dev libbz2-dev libcap-dev libcap-ng-dev libcunit1-dev libglib2.0-dev libpcre2-dev pkgconf systemd xmlto
+```
+
+build setools commands
+
+```sh
+wget https://github.com/SELinuxProject/selinux/releases/download/3.5/selinux-3.5.tar.gz
+tar xzf selinux-3.5.tar.gz
+cd selinux-3.5
+SELINUX_SRC=$(pwd)/libselinux
+SEPOL_SRC=$(pwd)/libsepol
+make -C $SEPOL_SRC
+make CFLAGS="-O2 -pipe -fPIC -Wall -I${SEPOL_SRC}/include" LDFLAGS="-L${SEPOL_SRC}/src" -C ${SELINUX_SRC}
+```
+
+version 3.2 (cf853c1a0c2328ad6c62fb2b2cc55d4926301d6)
+
+```sh
+wget https://codeload.github.com/SELinuxProject/selinux/zip/cf853c1a0c2328ad6c62fb2b2cc55d4926301d6
+unzip cf853c1a0c2328ad6c62fb2b2cc55d4926301d6
+cd selinux-cf853c1a0c2328ad6c62fb2b2cc55d4926301d6b
+SELINUX_SRC=$(pwd)/libselinux
+SEPOL_SRC=$(pwd)/libsepol
+CHECKPOLICY_SRC=$(pwd)/checkpolicy
+make -C $SEPOL_SRC
+make CFLAGS="-O2 -pipe -fPIC -Wall -I${SEPOL_SRC}/include" LDFLAGS="-L${SEPOL_SRC}/src" -C ${SELINUX_SRC}
+make CFLAGS="-O2 -pipe -fPIC -Wall -I${SEPOL_SRC}/include" -C ${CHECKPOLICY_SRC}
+LD_LIBRARY_PATH="${SEPOL_SRC}/src:${SELINUX_SRC}/src:${LD_LIBRARY_PATH}" python setup.py build_ext -i
+```
+
+setools version 4.4.2
+
+```sh
+wget https://github.com/SELinuxProject/setools/releases/download/4.4.2/setools-4.4.2.tar.bz2
+tar xjf setools-4.4.2.tar.bz2 && cd setools
+pip install Cython
+USERSPACE_SRC=/home/u/BiggerMAC/externals/selinux-3.5/ python setup.py build_ext -i
+```
+
+```sh
+LD_LIBRARY_PATH=/home/u/BiggerMAC/externals/selinux-3.5/libsepol/src python
+```
+
 # Workflow
 
 1. Extract Zip files
