@@ -32,12 +32,24 @@ if __name__ == "__main__":
         file_contexts = read_file_contexts(asp.get_saved_file_path("plat_file_contexts"))
         file_contexts += read_file_contexts(asp.get_saved_file_path("vendor_file_contexts"))
     init = AndroidInit(asp)
-    hw = init.determine_hardware()
-    Logger.debug(f"hw: {hw}")
+    init.determine_hardware()
     init.read_configs()
     init.boot_system()
 
-    
+    ################################
+    # Parse SEPolicy file
+    ################################
+    print(asp.policy_files)
+    sepolicy = None
+    if "sepolicy" in asp.policy_files:
+        sepolicy = asp.get_saved_file_path("sepolicy")
+    elif "precompiled_sepolicy" in asp.policy_files:
+        sepolicy = asp.get_saved_file_path("precompiled_sepolicy")
+    if not sepolicy: raise Exception("No sepolicy file found")
+    print(sepolicy)
+
+
+
     Logger.debug("main.py done")
 
 def main_process():

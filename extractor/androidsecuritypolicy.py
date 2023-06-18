@@ -2,14 +2,21 @@ import os
 from typing import List
 from android.property import AndroidPropertyList
 from fs.filesystempolicy import FileSystemPolicy
+from se.policyfiles import PolicyFiles
 from utils import MODULE_PATH
 
 class AndroidSecurityPolicy:
-    def __init__(self, combined_fs: FileSystemPolicy, properties: AndroidPropertyList, name: str, fs_policies: List[FileSystemPolicy] = []):
+    def __init__(self, 
+                 combined_fs: FileSystemPolicy, 
+                 properties: AndroidPropertyList, 
+                 name: str, 
+                 fs_policies: List[FileSystemPolicy], 
+                 policy_files: PolicyFiles):
         self.combined_fs = combined_fs
         self.properties = properties
         self.name = name
         self.fs_policies = fs_policies
+        self.policy_files = policy_files
     
     def get_android_version(self) -> List[int]:
         android_version: List[int] = list(map(int, self.get_properties()['properties']['android_version'].split('.')))

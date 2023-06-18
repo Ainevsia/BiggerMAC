@@ -151,17 +151,20 @@ class AndroidInit:
         if rohw not in self.asp.properties:
             import re
             for pattern, regex in [
-                ("*uevent*rc", r'.*ueventd\.([-_a-zA-Z0-9]+)\.rc'),
-                ("*fstab.*",   r'.*fstab\.([-_a-zA-Z0-9]+)'),]:
+                ("*fstab.*",   r'.*fstab\.([-_a-zA-Z0-9]+)'),
+                # ("*uevent*rc", r'.*ueventd\.([-_a-zA-Z0-9]+)\.rc'),
+            ]:
 
-                results = self.asp.fs_policies['system'].find(pattern)
+                results = self.asp.fs_policies['vendor'].find(pattern)
                 for result in results:
                     match = re.match(regex, result)
 
                     if match:
                         ro_hardware_guess = match.group(1)
                         self.asp.properties[rohw] = ro_hardware_guess
-                        print("[!] " + ro_hardware_guess)
+                        Logger.info(f"Guessing ro.hardware as {ro_hardware_guess}")
+                        # print("[!] " + pattern + ro_hardware_guess + str(results))
+                        # exit(1)
                         break
         if ro_hardware_guess:
             Logger.info(f"Guessing ro.hardware as {ro_hardware_guess}")

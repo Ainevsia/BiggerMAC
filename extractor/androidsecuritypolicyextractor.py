@@ -7,6 +7,7 @@ from typing import Dict, List
 from android.property import AndroidPropertyList
 from extractor.androidsecuritypolicy import AndroidSecurityPolicy
 from fs.filesystempolicy import FilePolicy, FileSystem, FileSystemPolicy
+from se.policyfiles import PolicyFiles
 from utils.logger import Logger
 from utils import MODULE_PATH
 
@@ -74,8 +75,7 @@ SEPOLICY_FILES = [
     'eops.xml'
 ]
 
-
-class AndroidSecurityPolicyExtractor():
+class AndroidSecurityPolicyExtractor:
     def __init__(self, fs_lst: List[FileSystem], name: str):
         self.fs_lst = fs_lst
         self.name = name
@@ -124,6 +124,9 @@ class AndroidSecurityPolicyExtractor():
             combined_fs.add_mount_point("/", "rootfs", "rootfs", ["rw"])
             combined_fs.add_mount_point("/system", "ext4", "/dev/block/bootdevice/by-name/system", ["rw"])
         
+
+        policy_files: PolicyFiles = PolicyFiles(self.name)
+
         Logger.info(f'Found system partition {len(combined_fs.files)}')
         if "vendor" in fs_policies:
             combined_fs.mount(fs_policies['vendor'], "/vendor")
@@ -139,7 +142,7 @@ class AndroidSecurityPolicyExtractor():
             if filebase in SEPOLICY_FILES:
                 file_name = os.path.basename(fp.original_path)
                 self.save_file(fp.original_path, file_name)
-
+                policy_files.append(file_name)
                 Logger.info(f'Found sepolicy file {file_name}')
 
         self.combined_fs = combined_fs
@@ -148,7 +151,7 @@ class AndroidSecurityPolicyExtractor():
 
         self.save()
 
-        return AndroidSecurityPolicy(self.combined_fs, self.properties, self.name, fs_policies)
+        return AndroidSecurityPolicy(self.combined_fs, self.properties, self.name, fs_policies, policy_files)
 
     def save_file(self, source: str, path: str, overwrite: bool = False):
         '''将文件从挂载点保存至eval汇总目录中'''
