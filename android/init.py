@@ -1,10 +1,12 @@
+import os
 import re
+import stat
 from typing import Dict, List
 from android.dac import AID_MAP_INV, Cred
 from android.property import PROPERTY_KEY, PROPERTY_VALUE, AndroidPropertyList
 from android.sepolicy import SELinuxContext
 from extractor.androidsecuritypolicy import AndroidSecurityPolicy
-from fs.filesystempolicy import FileSystemPolicy
+from fs.filesystempolicy import FilePolicy, FileSystemPolicy
 from utils.logger import Logger
 
 # 创建类型别名
@@ -33,20 +35,6 @@ class TriggerCondition:
             return True
         else:
             return False
-
-    def setprop(self, new_prop):
-        if new_prop not in self.property_conditions:
-            return False
-
-        val = True
-
-        for p, v in self.property_conditions.items():
-            val = True if p in prop and (prop[p] == v or v == "*") else False
-
-            if not val:
-                break
-
-        return val
 
     def _parse_trigger(self):
         expect_and = False  # flag to indicate if we expect an &&
@@ -100,7 +88,6 @@ class AndroidInitAction:
     def __repr__(self):
         return "<AndroidInitAction %d commands on %s>" % (len(self.commands), repr(self.condition))
 
-
 class AndroidInitService:
     def __init__(self, name: str, args: List[str]):
         self.service_class: str = "default"
@@ -149,7 +136,6 @@ class AndroidInitService:
             self.cred.sid = SELinuxContext.FromString(args[0])
         else:
             self.options += [[option] + args]
-
 
 class AndroidInit:
     def __init__(self, asp: AndroidSecurityPolicy):
@@ -311,6 +297,62 @@ class AndroidInit:
             for cmd in action.commands:
                 self.execute(cmd[0], cmd[1:])
     
+    def _add_uevent_file(self, path: str, file_policy: FilePolicy):
+        if not path.startswith("/dev") and not path.startswith("/sys"): return
+        if '*' in path: path = path.replace('*', '0')
+        path = os.path.normpath(path)
+        self._expand_kernelfs_dirs(path)
+        self.asp.combined_fs.add_or_update_file(path, file_policy)  # TODO ? deepcopy ?
+        pass
+
+    def _expand_kernelfs_dirs(self, path: str):
+        """
+        Use the default permissions for creating /sys/* or /dev/* directories
+        """
+        total_path = "/"
+
+        # Ignore the last, path as we're creating that next
+        for component in os.path.normpath(path).split(os.sep)[1:-1]:
+            # 递归创建目录 /sys/* or /dev/* 
+            total_path = os.path.join(total_path, component)
+
+            ## Sysfs default permissions
+            # directories - 755
+            # files - 444 (644 for writeable ones)
+            #
+            ## Devfs default permissions
+            # directories - 755
+            # files - 400 (600 for writeable ones)
+
+            if total_path not in self.asp.combined_fs:
+                fp = FilePolicy.create_pseudo_file(AID_MAP_INV['root'], AID_MAP_INV['root'], 0o755 | stat.S_IFDIR)
+                self.asp.combined_fs.add_file(total_path, fp)   # just directory
+
+    def lazy_init_uevent(self, path: str, mode: int):
+        if path not in self.asp.combined_fs:
+            if path.startswith("/dev"):     mode = mode | stat.S_IFCHR
+            elif path.startswith("/sys"):   mode = mode | stat.S_IFREG
+            self._add_uevent_file(path, FilePolicy.create_pseudo_file(AID_MAP_INV['root'], AID_MAP_INV['root'], mode))
+
+    def expand_properties(self, string: str) -> str:
+        new_string: str = string
+
+        for m in re.finditer(r'\$\{' + PROPERTY_KEY.pattern + r'\}', string):
+            key = m.group(0)[2:-1]
+
+            # silently fail a property lookup
+            if key in self.asp.properties:
+                value = self.asp.properties[key]
+            else:
+                value = ""
+
+            new_string = new_string.replace(m.group(0), value)
+
+        return new_string
+
+    def _init_rel_path(self, path: str) -> str:
+        return self.asp.combined_fs[path]
+
     def execute(self, cmd: str, args: List[str]):
         if cmd == "trigger":
             assert len(args) == 1
@@ -329,9 +371,9 @@ class AndroidInit:
                     Logger.warning("Malformed mkdir: %s", args)
                     return
             if len(args) > 2:
-                user = AID_MAP_INV.get(args[2], 9999)
+                user: int = AID_MAP_INV.get(args[2], 9999)
             if len(args) > 3:
-                group = AID_MAP_INV.get(args[3], 9999)
+                group: int = AID_MAP_INV.get(args[3], 9999)
             if user == 9999:
                 Logger.warning("Missing AID definition for user: %s", args[2])
             if group == 9999:
@@ -339,21 +381,14 @@ class AndroidInit:
 
             self.asp.combined_fs.mkdir(os.path.normpath(path), user, group, perm)
         elif cmd == "chown":
-            if len(args) < 3:
-                log.warning("Chown not enough arguments")
-                return
-
+            if len(args) < 3: return
             user = AID_MAP_INV.get(args[0], 9999)
             group = AID_MAP_INV.get(args[1], 9999)
-            if user == 9999:
-                log.warning("Missing AID definition for user: %s", args[0])
-            if group == 9999:
-                log.warning("Missing AID definition for group: %s", args[1])
 
             path = args[2]
 
-            # Try to instantiate it anyways
-            if path not in self.root_fs.files:
+            # Try to instantiate it anyways (if it's not in the combined_fs)
+            if path not in self.asp.combined_fs:
                 if path.startswith("/dev"):
                     mode = 0o0600 | stat.S_IFCHR
                 elif path.startswith("/sys"):
@@ -361,48 +396,22 @@ class AndroidInit:
                 else:
                     return
 
-                policy = {
-                    "original_path": None,
-                    "user": user,
-                    "group": group,
-                    "perms": mode,
-                    "size": 0,
-                    "link_path": "",
-                    "capabilities": None,
-                    "selinux": None,
-                }
+                fp: FilePolicy = FilePolicy.create_pseudo_file(user, group, mode)
+                
 
-                self._add_uevent_file(path, policy)
+                self._add_uevent_file(path, fp)
 
-            self.root_fs.chown(path, user, group)
+            self.asp.combined_fs.chown(path, user, group)
         elif cmd == "chmod":
-            mode = int(args[0], 8)
-            path = args[1]
+            '''chmod <mode> <path>'''
+            mode: int = int(args[0], 8)
+            path: str = args[1]
 
             # Try to instantiate it anyways
-            if path not in self.root_fs.files:
-                if path.startswith("/dev"):
-                    mode = mode | stat.S_IFCHR
-                elif path.startswith("/sys"):
-                    mode = mode | stat.S_IFREG
-                else:
-                    return
-
-                policy = {
-                    "original_path": None,
-                    "user": AID_MAP_INV.get("root", 9999),
-                    "group": AID_MAP_INV.get("root", 9999),
-                    "perms": mode,
-                    "size": 0,
-                    "link_path": "",
-                    "capabilities": None,
-                    "selinux": None,
-                }
-
-                self._add_uevent_file(path, policy)
-
-            self.root_fs.chmod(path, mode)
+            self.lazy_init_uevent(path, mode)
+            self.asp.combined_fs.chmod(path, mode)
         elif cmd == "copy":
+            '''copy <src> <dst> [mode] [owner] [group]'''
             pass
         elif cmd == "rm":
             pass
@@ -411,50 +420,66 @@ class AndroidInit:
         elif cmd == "setprop":
             pass
         elif cmd == "enable":
-            if len(args) < 1:
-                log.warning("Enable needs an argument")
-                return
-
-            service = args[0]
-
+            # enable <service>
+            service: str = args[0]
             if service in self.services:
                 if self.services[service].disabled:
-                    log.info("Enabling service %s", service)
                     self.services[service].disabled = False
         elif cmd == "write":
             pass
         elif cmd == "mount":
-            path = args[2]
+            # mount <fstype> <device> <path> [options]
             fstype = args[0]
             device = args[1]
-            options = []
+            path = args[2]
+            options: List[List[str]] = []
             if len(args) > 3:
                 for o in args[3:]:
                     options += o.split(",")
 
-            if path in self.root_fs.mount_points:
-                return
+            if path in self.asp.combined_fs.mount_points: return
 
-            self.root_fs.add_mount_point(path, fstype, device, options)
+            self.asp.combined_fs.add_mount_point(path, fstype, device, options)
         elif cmd == "mount_all":
             path = args[0]
             late_mount = "--late" in args
 
             try:
                 with open(self._init_rel_path(self.expand_properties(path)), 'r') as fp:
-                    fstab_data = fp.read()
+                    fstab_data: str = fp.read()
                     entries = self.parse_fstab(fstab_data)
             except IOError:
-                log.error("Unable to open fstab file %s", self._init_rel_path(self.expand_properties(path)))#path)
+                Logger.warning("Failed to open fstab file: %s", path)
                 return
 
             for entry in entries:
-                if late_mount and "latemount" not in entry["fsmgroptions"]:
-                    continue
-                if not late_mount and "latemount" in entry["fsmgroptions"]:
-                    continue
+                if late_mount and "latemount" not in entry["fsmgroptions"]: continue
+                if not late_mount and "latemount" in entry["fsmgroptions"]: continue
+                if entry["path"] in self.asp.combined_fs.mount_points: continue
 
-                if entry["path"] in self.root_fs.mount_points:
-                    continue
+                self.asp.combined_fs.add_mount_point(entry["path"], entry["fstype"], entry["device"], entry["options"])
 
-                self.root_fs.add_mount_point(entry["path"], entry["fstype"], entry["device"], entry["options"])
+    def parse_fstab(self, data: str) -> List[Dict[str, str]]:
+        entries: List[Dict[str, str]] = []
+
+        for line in data.split("\n"):
+            if re.match('^(\s*#)|(\s*$)', line): continue
+            line = re.sub('\s+', " ", line)
+            components = list(filter(lambda x: len(x) > 0, line.split(" ")))
+            
+            device = components[0]
+            mount_path = components[1]
+            fstype = components[2]
+            options = components[3].split(",")
+
+            if len(components) > 4:
+                fsmgroptions = components[4].split(",")
+            else:
+                fsmgroptions = []
+
+            entries += [{"device":device, "path" : mount_path, "fstype" : fstype, "options" : options,
+                "fsmgroptions" : fsmgroptions}]
+
+        return entries
+
+

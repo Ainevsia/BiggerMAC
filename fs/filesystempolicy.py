@@ -11,10 +11,10 @@ class FilePolicy:
         st = os.lstat(path)
 
         # Collect DAC policy
-        perms = st[stat.ST_MODE]
-        user = st[stat.ST_UID]
-        group = st[stat.ST_GID]
-        size = st[stat.ST_SIZE]
+        perms: int = st[stat.ST_MODE]
+        user: int = st[stat.ST_UID]
+        group: int = st[stat.ST_GID]
+        size: int = st[stat.ST_SIZE]
     
         self.original_path = path   # filepath in the host's filesystem
         self.user = user
@@ -62,7 +62,7 @@ class FilePolicy:
         fp.selinux = None
         return fp
 
-class MountPoint():
+class MountPoint:
     def __init__(self, type: str, device: str, options: List[str]):
         self.type = type
         self.device = device
@@ -100,6 +100,9 @@ class FileSystemPolicy:
         if key not in self.files:
             raise KeyError("File %s not in policy" % key)
         return self.files[key].original_path
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.files
 
     def add_file(self, path: str, file_policy: FilePolicy):
         if path != "/" and path.endswith("/"):
@@ -140,5 +143,13 @@ class FileSystemPolicy:
         if path != "/" and path.endswith("/"): raise ValueError("Paths must be cannonicalized! %s" % path)
         self.files[path] = policy_info
 
+    def chown(self, path: str, user: int, group: int):
+        if path not in self.files: raise KeyError("File %s not in policy" % path)
+        self.files[path].user = user
+        self.files[path].group = group
 
-
+    def chmod(self, path: str, perm: int):
+        '''Change the permission of a file'''
+        if path not in self.files: return
+        fp: FilePolicy = self.files[path]
+        fp.perms = (fp.perms & ~0o7777) | (perm & 0o7777)
