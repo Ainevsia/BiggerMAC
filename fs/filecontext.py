@@ -16,7 +16,7 @@ F_MODE = {S_IFIFO: '-p',
 F_MODE_INV = dict([[v,k] for k,v in F_MODE.items()])
 
 
-class AndroidFileContext(object):
+class AndroidFileContext:
     '''对应一个Android文件系统中的文件上下文，包含一个正则表达式和一个SELinux上下文'''
     def __init__(self, regex: re.Pattern, mode: str, context: SELinuxContext):
         self.regex = regex      # re.Pattern

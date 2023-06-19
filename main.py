@@ -8,6 +8,7 @@ from extractor.androidsecuritypolicyextractor import AndroidSecurityPolicyExtrac
 from extractor.zipextractor import ZipExtractor
 from fs.filecontext import read_file_contexts
 from fs.filesystempolicy import FileSystem
+from se.sepolicygraph import SELinuxPolicyGraph
 from utils import check_root, set_working_directory, MODULE_PATH
 from utils.logger import Logger
 import argparse
@@ -46,10 +47,11 @@ if __name__ == "__main__":
     elif "precompiled_sepolicy" in asp.policy_files:
         sepolicy = asp.get_saved_file_path("precompiled_sepolicy")
     if not sepolicy: raise Exception("No sepolicy file found")
-    print(sepolicy)
+    graph = SELinuxPolicyGraph(sepolicy)
+    graph.find_useless_type()
 
 
-    from IPython import embed; embed()
+    
     Logger.debug("main.py done")
 
 def main_process():

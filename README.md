@@ -75,6 +75,7 @@ setools version 4.4.2
 wget https://github.com/SELinuxProject/setools/releases/download/4.4.2/setools-4.4.2.tar.bz2
 tar xjf setools-4.4.2.tar.bz2 && cd setools
 pip install Cython
+pip install networkx
 USERSPACE_SRC=/home/u/BiggerMAC/externals/selinux-3.5/ python setup.py build_ext -i
 ```
 
@@ -90,3 +91,7 @@ LD_LIBRARY_PATH=/home/u/BiggerMAC/externals/selinux-3.5/libsepol/src python
 4. to emulate the behavior of the Android init process
     - parse all the init.rc files available in the system
     - emulate the behavior of the init process in `boot_system`
+
+.pxi 文件是 Cython 的类型声明文件，用于在 Cython 中定义类型和接口。它通常与 .pyx 文件一起使用，提供对外部代码的类型和接口声明。
+
+.pyx 是一个用于编写 Cython 代码的文件扩展名。Cython 是一个用于将 Python 代码转换为 C/C++ 代码并与原生代码进行混合编程的工具。.pyx 文件包含了 Cython 代码的源代码。
