@@ -7,8 +7,9 @@ from extractor.androidsecuritypolicy import AndroidSecurityPolicy
 from extractor.androidsecuritypolicyextractor import AndroidSecurityPolicyExtractor
 from extractor.zipextractor import ZipExtractor
 from fs.filecontext import read_file_contexts
+from fs.filesysteminstance import FileSystemInstance
 from fs.filesystempolicy import FileSystem
-from se.sepolicygraph import SELinuxPolicyGraph
+from se.sepolicygraph import PolicyGraph, SELinuxPolicyGraph
 from utils import check_root, set_working_directory, MODULE_PATH
 from utils.logger import Logger
 import argparse
@@ -49,9 +50,9 @@ if __name__ == "__main__":
     if not sepolicy: raise Exception("No sepolicy file found")
     graph = SELinuxPolicyGraph(sepolicy)
     # graph.find_useless_type()
-    graph.build_graph()
-
-    
+    pg: PolicyGraph = graph.build_graph()
+    Logger.debug("Overlaying policy to filesystems")
+    res = FileSystemInstance(pg, init).instantiate()
     Logger.debug("main.py done")
 
 def main_process():

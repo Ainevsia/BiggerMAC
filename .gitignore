@@ -5,7 +5,7 @@ firmwares_booting_extracted/
 firmwares_mnt/
 tests/
 eval/
-
+*.svg
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

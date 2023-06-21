@@ -4,6 +4,21 @@ from setools.policyrep import TERule, AVRuleXperm, AVRule, FileNameTERule, TERul
 import networkx as nx
 from utils.logger import Logger
 
+class PolicyGraph():
+    ''''''
+    def __init__(self, classes: Dict[str, Dict[str, Union[List[str], str]]], attributes: Dict[str, List[str]], types: Dict[str, List[str]], aliases: Dict[str, bool], genfs: Dict[str, List[str]], fs_use: Dict[str, List[str]], G_allow: nx.DiGraph, G_transition: nx.DiGraph):
+        # PolicyGraph(classes, attributes, types, aliases, genfs, fs_use, G_allow, G_transition)
+        self.classes = classes
+        self.attributes = attributes
+        self.types = types
+        self.aliases = aliases
+        self.genfs = genfs
+        self.fs_use = fs_use
+        self.G_allow = G_allow
+        self.G_transition = G_transition
+
+    
+
 class SELinuxPolicyGraph(setools.SELinuxPolicy):
     pass
     # 不知道为什么，这里不能写构造函数，否则会报错
@@ -123,7 +138,7 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
         print("--= done =--")
         return
 
-    def build_graph(self):
+    def build_graph(self) -> PolicyGraph:
         """Create a graph for querying."""
         G_allow = nx.MultiDiGraph()
         G_transition = nx.MultiDiGraph()
@@ -203,12 +218,12 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
 
 
 
-
+        cnt = 0
         edges_to_add = 0
 
         for terule_ in cond_sort(self.terules()):
             
-            
+            Logger.debug("Processing : " + str(terule_))
             # from IPython import embed; embed()
             # exit(233)
             if isinstance(terule_, AVRuleXperm):
@@ -221,7 +236,6 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
                     u_type = str(terule_.source)
                     v_type = str(terule_.target)
 
-
                     # make sure we're not dealing with aliases: only types and attributes
                     assert u_type not in aliases
                     assert v_type not in aliases
@@ -229,11 +243,19 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
                     # Add an individual edge from u -> v for each perm
                     #for x in perms:
                     G_allow.add_edge(u_type, v_type, teclass=str(terule_.tclass), perms=[str(x) for x in perms])
-                    # plot(G_allow, "G_allow.svg", debug=False)
 
-            elif isinstance(terule_, TERule):
+                    # G = G_allow
+                    # nx.set_node_attributes(G, 'filled,solid', 'style')
+                    # import pygraphviz
+                    # AG = nx.nx_agraph.to_agraph(G)
+                    # AG.layout(prog='sfdp')
+                    # AG.draw("G_allow.svg", prog="sfdp", format='svg', args='-Gsmoothing=rng -Goverlap=prism2000 -Goutputorder=edgesfirst -Gsep=+2')
+                    # cnt += 1
+                    # if cnt > 10:
+                    #     exit(2)
+            elif isinstance(terule_, TERule) or isinstance(terule_, FileNameTERule):
                 # "{0.ruletype} {0.source} {0.target}:{0.tclass} {0.default}".format(terule_)
-                assert terule_.ruletype == "type_transition"
+                assert terule_.ruletype == TERuletype.type_transition
 
                 u_type = str(terule_.source)
                 # technically target is not the target
@@ -248,14 +270,12 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
                 try:
                     file_qualifier = str(terule_.filename)
                 except:
-                    # invalid use for type_change/member
                     pass
 
                 G_transition.add_edge(u_type, v_type,
                                       teclass=str(terule_.tclass),
                                       through=str(terule_.target),
                                       name=file_qualifier)
-                #plot(G_transition, "G_transition.svg", debug=False)
             else:
                 raise RuntimeError("Unhandled TE rule")
 
@@ -267,8 +287,9 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
                 pass
 
 
+        
+        Logger.debug("Finished processing TE rules")
 
+        return PolicyGraph(classes, attributes, types, aliases, genfs, fs_use, G_allow, G_transition)
+    
 
-
-
-        pass
