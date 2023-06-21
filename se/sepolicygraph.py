@@ -1,7 +1,7 @@
 from typing import Dict, List, Set, Union
 import setools
-from setools.policyrep import TERule, AVRuleXperm, AVRule, FileNameTERule
-
+from setools.policyrep import TERule, AVRuleXperm, AVRule, FileNameTERule, TERuletype
+import networkx as nx
 from utils.logger import Logger
 
 class SELinuxPolicyGraph(setools.SELinuxPolicy):
@@ -124,4 +124,151 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
         return
 
     def build_graph(self):
+        """Create a graph for querying."""
+        G_allow = nx.MultiDiGraph()
+        G_transition = nx.MultiDiGraph()
+
+        sort = True
+
+        def cond_sort(value):
+            """Helper function to sort values according to the sort parameter"""
+            return value if not sort else sorted(value)
+
+
+        classes: Dict[str, Dict[str, Union[List[str], str, None]]] = {}
+        attributes: Dict[str, List[str]] = {}   # 所有拥有attribute的type
+        commons: Dict[str, List[str]] = {}      # 记录一个common的所有perms
+        types: Dict[str, List[str]] = {}        # 一个type的所有attribute，如果有的话；如果是alias，记录它的type
+        aliases: Dict[str, bool] = {}           # 记录一个type是否实际上是一个alias
+        fs_use: Dict[str, str] = {}             # 由于伪文件系统不支持labeling，使用fs_use_task记录标签
+        genfs: Dict[str, List[List[str]]] = {}  # 记录fs文件系统路径下的label
+
+        # define type attributes
+        for attribute_ in cond_sort(self.typeattributes()):
+            attributes[str(attribute_)] = []
+
+        # access vectors
+        for common_ in cond_sort(self.commons()):
+            commons[str(common_)] = [str(x) for x in common_.perms]
+
+        # security object classes
+        for class_ in cond_sort(self.classes()):
+            try:
+                parent = str(class_.common)
+                commons[parent] # just ensure it exists
+            except:
+                parent = None
+
+            perms = [str(x) for x in class_.perms]
+            classes[str(class_)] = { "perms" : perms, "parent" : parent }
+
+        # define types, aliases and attributes
+        for type_ in cond_sort(self.types()):
+            name = str(type_)
+
+            for attr in type_.attributes():
+                attributes[str(attr)] += [name]
+
+            for alias in type_.aliases():
+                types[str(alias)] = name
+                aliases[str(alias)] = True
+
+            types[name] = [str(x) for x in type_.attributes()]
+
+        # define fs_use contexts
+        for fs_use_ in cond_sort(self.fs_uses()):
+            # The fs_use_task statement is used to allocate a security context to pseudo filesystems that support task related services such as pipes and sockets.
+            # The statement definition is:
+            # fs_use_task fs_name fs_context;
+            # fs_use_task pipefs u:object_r:pipefs:s0;
+            fs_use[str(fs_use_.fs)] = str(fs_use_.context)
+
+        # https://selinuxproject.org/page/FileStatements
+
+        # define genfs contexts
+        for genfscon_ in cond_sort(self.genfscons()):
+            # The genfscon statement is used to allocate a security context to filesystems that 
+            # cannot support any of the other file labeling statements 
+            # (fs_use_xattr, fs_use_task or fs_use_trans)
+
+            # genfscon fs_name        partial_path fs_context
+            # genfscon binfmt_misc    /            u:object_r:binfmt_miscfs:s0"
+            fs = genfscon_.fs
+            if fs not in genfs:
+                genfs[fs] = []
+
+            genfs[fs] += [[str(genfscon_.path), str(genfscon_.context)]]
+
+
+
+
+
+
+        edges_to_add = 0
+
+        for terule_ in cond_sort(self.terules()):
+            
+            
+            # from IPython import embed; embed()
+            # exit(233)
+            if isinstance(terule_, AVRuleXperm):
+                perms = terule_.perms
+            elif isinstance(terule_, AVRule):
+                perms = terule_.perms
+                assert(type(perms) == frozenset)
+                
+                if terule_.ruletype == TERuletype.allow or terule_.ruletype == TERuletype.auditallow:
+                    u_type = str(terule_.source)
+                    v_type = str(terule_.target)
+
+
+                    # make sure we're not dealing with aliases: only types and attributes
+                    assert u_type not in aliases
+                    assert v_type not in aliases
+
+                    # Add an individual edge from u -> v for each perm
+                    #for x in perms:
+                    G_allow.add_edge(u_type, v_type, teclass=str(terule_.tclass), perms=[str(x) for x in perms])
+                    # plot(G_allow, "G_allow.svg", debug=False)
+
+            elif isinstance(terule_, TERule):
+                # "{0.ruletype} {0.source} {0.target}:{0.tclass} {0.default}".format(terule_)
+                assert terule_.ruletype == "type_transition"
+
+                u_type = str(terule_.source)
+                # technically target is not the target
+                # default is the target type, whereas target is the object used to start the transition
+                v_type = str(terule_.default)
+
+                assert u_type not in aliases
+                assert v_type not in aliases
+
+                file_qualifier = None
+
+                try:
+                    file_qualifier = str(terule_.filename)
+                except:
+                    # invalid use for type_change/member
+                    pass
+
+                G_transition.add_edge(u_type, v_type,
+                                      teclass=str(terule_.tclass),
+                                      through=str(terule_.target),
+                                      name=file_qualifier)
+                #plot(G_transition, "G_transition.svg", debug=False)
+            else:
+                raise RuntimeError("Unhandled TE rule")
+
+
+            try:
+                terule_.conditional
+                raise ValueError("Policy has conditional rules. Not supported for SEAndroid graphing")
+            except:
+                pass
+
+
+
+
+
+
         pass
