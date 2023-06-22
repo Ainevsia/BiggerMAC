@@ -11,6 +11,16 @@ from se.sepolicygraph import PolicyGraph
 from utils.logger import Logger
 from setools.policyrep import Context, Type
 
+
+OBJ_COLOR_MAP: Dict[str, str] = {
+    'subject' : '#b7bbff',
+    'subject_group' : 'white',
+    'file' : 'grey',
+    'ipc' : 'pink',
+    'socket' : 'orange',
+    'unknown' : 'red',
+}
+
 class FileSystemInstance:
     '''巨型类，可以理解为一个实际运行的文件系统的实例'''
     def __init__(self, sepol: PolicyGraph, init: AndroidInit, file_contexts: List[AndroidFileContext]):
@@ -33,7 +43,8 @@ class FileSystemInstance:
         self.domain_attributes: List[str] = []
         '''所有的domain'''
 
-        # self.objects = {}
+        self.objects = {}
+        ''' 111 111'''
 
         # # Fully instantiated graph
         # self.processes = {}
@@ -64,10 +75,12 @@ class FileSystemInstance:
         Logger.debug("Generating subject type hierarchy...")
         self.recover_subject_hierarchy()
 
+        Logger.debug("Inflating subject dataflow graph...")
 
         pass
 
     def apply_file_contexts(self):
+        '''恢复文件系统中的标签'''
         recovered_labels = 0
         dropped_files: List[str] = []
         # 遍历文件系统中的所有文件 file 是一个文件路径
@@ -174,13 +187,15 @@ class FileSystemInstance:
 
     def inflate_subjects(self):
         G: nx.DiGraph = self.sepol.G_allow
-        G_subject = nx.MultiDiGraph()
 
-        self.subject_groups = {}
+        G_subject = nx.MultiDiGraph()   # a new Graph !!
+
         domain_attributes: Set[str] = set()
 
+        # from IPython import embed; embed(); exit(1)
+        # All types used for processes. attribute domain
         for domain in self.sepol.attributes['domain']:  # 遍历 `domain` attribute 中的所有 type
-            s: SubjectNode = SubjectNode(Cred())
+            s: SubjectNode = SubjectNode(Cred())        # 创建一个新的subject
             s.sid = SELinuxContext.FromString("u:r:%s:s0" % domain)
 
             assert domain not in self.subjects, "Duplicate subject %s" % domain
@@ -213,7 +228,7 @@ class FileSystemInstance:
                 pass
             if not bad:
                 good += [attr]
-            pass
+            
         
         self.domain_attributes = good
 
@@ -223,7 +238,7 @@ class FileSystemInstance:
             assert attr not in self.subject_groups
             assert attr not in self.subjects
             self.subject_groups[attr] = s
-        pass
+        
     
     def gen_file_mapping(self):
         """
@@ -248,6 +263,7 @@ class FileSystemInstance:
             pass
         pass
 
+    # This proc is simplified to make clear
     def recover_subject_hierarchy(self):
         '''恢复进程关系？还没完全能明白'''
         G = self.sepol.G_allow
@@ -363,6 +379,35 @@ class FileSystemInstance:
         
         pass
 
+    def inflate_graph(self, expand_all_objects: bool = True, skip_fileless_subjects: bool = True):
+        """
+        Create all possible subjects and objects from the MAC policy and link
+        them in a graph based off of dataflow.
+        """
+        G = self.sepol.G_allow
+        Gt = self.sepol.G_transition
+
+        # Create our dataflow graph
+        GS = self.sepol.G_dataflow = nx.MultiDiGraph()
+        for _, s in self.subjects.items():
+            if skip_fileless_subjects and len(s.backing_files) == 0:
+                continue
+            GS.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject'])
+
+        # for attr in self.subject_groups.keys():
+        #     s = self.subject_groups[attr]
+
+        #     GS.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject_group'])
+
+        #     for domain in self.expand_attribute(attr):
+        #         if domain not in self.subjects:
+        #             raise ValueError("Type member %s of attribute %s not a subject!" % (domain, attr))
+
+        #         if skip_fileless_subjects and len(self.subjects[domain].backing_files) == 0:
+        #             continue
+
+        #         # add a is-a edge between the subjects as they are effectively the same
+        #         GS.add_edge(self.subjects[domain].get_node_name(), s.get_node_name())
 
     pass
 

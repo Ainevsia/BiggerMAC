@@ -58,6 +58,8 @@ class SubjectNode(GraphNode):
         self.backing_files.update(file_obj)
         pass
 
+    def get_node_name(self):
+        return "subject:%s" % (self.sid.type)
     pass
 
 

@@ -52,13 +52,14 @@ if __name__ == "__main__":
     # graph.find_useless_type()
     pg: PolicyGraph = graph.build_graph()
     Logger.debug("Overlaying policy to filesystems")
+
+
+
+    ################################
+    # Simulate the whole system
+    ################################
     res = FileSystemInstance(pg, init, file_contexts).instantiate()
     Logger.debug("main.py done")
-
-def main_process():
-    '''开始进行对策略文件的分析'''
-    init = AndroidInit()
-
 
 
 
