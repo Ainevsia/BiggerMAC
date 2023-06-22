@@ -1,12 +1,20 @@
 from typing import Dict, List, Set, Union
 import setools
-from setools.policyrep import TERule, AVRuleXperm, AVRule, FileNameTERule, TERuletype
+from setools.policyrep import TERule, AVRuleXperm, AVRule, FileNameTERule, TERuletype, Genfscon, FSUse, Type
 import networkx as nx
 from utils.logger import Logger
 
 class PolicyGraph():
     ''''''
-    def __init__(self, classes: Dict[str, Dict[str, Union[List[str], str]]], attributes: Dict[str, List[str]], types: Dict[str, List[str]], aliases: Dict[str, bool], genfs: Dict[str, List[str]], fs_use: Dict[str, List[str]], G_allow: nx.DiGraph, G_transition: nx.DiGraph):
+    def __init__(self, 
+                 classes: Dict[str, Dict[str, Union[List[str], str]]], 
+                 attributes: Dict[str, List[Type]], 
+                 types: Dict[str, List[str]], 
+                 aliases: Dict[str, bool], 
+                 genfs: Dict[str, List[Genfscon]], 
+                 fs_use: Dict[str, FSUse] , 
+                 G_allow: nx.DiGraph, 
+                 G_transition: nx.DiGraph):
         # PolicyGraph(classes, attributes, types, aliases, genfs, fs_use, G_allow, G_transition)
         self.classes = classes
         self.attributes = attributes
@@ -16,8 +24,6 @@ class PolicyGraph():
         self.fs_use = fs_use
         self.G_allow = G_allow
         self.G_transition = G_transition
-
-    
 
 class SELinuxPolicyGraph(setools.SELinuxPolicy):
     pass
@@ -151,12 +157,12 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
 
 
         classes: Dict[str, Dict[str, Union[List[str], str, None]]] = {}
-        attributes: Dict[str, List[str]] = {}   # 所有拥有attribute的type
+        attributes: Dict[str, List[Type]] = {}  # 所有拥有attribute的type
         commons: Dict[str, List[str]] = {}      # 记录一个common的所有perms
         types: Dict[str, List[str]] = {}        # 一个type的所有attribute，如果有的话；如果是alias，记录它的type
         aliases: Dict[str, bool] = {}           # 记录一个type是否实际上是一个alias
-        fs_use: Dict[str, str] = {}             # 由于伪文件系统不支持labeling，使用fs_use_task记录标签
-        genfs: Dict[str, List[List[str]]] = {}  # 记录fs文件系统路径下的label
+        fs_use: Dict[str, FSUse] = {}           # 由于伪文件系统不支持labeling，使用fs_use_task记录标签
+        genfs: Dict[str, List[Genfscon]] = {}   # 记录fs文件系统路径下的label
 
         # define type attributes
         for attribute_ in cond_sort(self.typeattributes()):
@@ -182,7 +188,7 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
             name = str(type_)
 
             for attr in type_.attributes():
-                attributes[str(attr)] += [name]
+                attributes[str(attr)] += [type_]
 
             for alias in type_.aliases():
                 types[str(alias)] = name
@@ -196,7 +202,7 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
             # The statement definition is:
             # fs_use_task fs_name fs_context;
             # fs_use_task pipefs u:object_r:pipefs:s0;
-            fs_use[str(fs_use_.fs)] = str(fs_use_.context)
+            fs_use[str(fs_use_.fs)] = fs_use_
 
         # https://selinuxproject.org/page/FileStatements
 
@@ -209,11 +215,14 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
             # genfscon fs_name        partial_path fs_context
             # genfscon binfmt_misc    /            u:object_r:binfmt_miscfs:s0"
             fs = genfscon_.fs
-            if fs not in genfs:
-                genfs[fs] = []
-
-            genfs[fs] += [[str(genfscon_.path), str(genfscon_.context)]]
-
+            if fs not in genfs: genfs[fs] = []
+            genfs[fs] += [genfscon_]
+            '''
+            genfscon proc / system_u:object_r:proc_t:s0
+            genfscon proc /sysvipc system_u:object_r:proc_t:s0
+            genfscon proc /fs/openafs system_u:object_r:proc_afs_t:s0
+            genfscon proc /kmsg system_u:object_r:proc_kmsg_t:s15:c0.c255
+            '''
 
 
 
@@ -223,7 +232,7 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
 
         for terule_ in cond_sort(self.terules()):
             
-            Logger.debug("Processing : " + str(terule_))
+            # Logger.debug("Processing : " + str(terule_))
             # from IPython import embed; embed()
             # exit(233)
             if isinstance(terule_, AVRuleXperm):

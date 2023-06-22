@@ -30,9 +30,9 @@ if __name__ == "__main__":
     # now collect all selinux files from the file system
     asp: AndroidSecurityPolicy = AndroidSecurityPolicyExtractor(fs_lst, 'Huawei_Mate_20').extract_from_firmware()
     major, minor, revision = asp.get_android_version()
-    if major >= 9:
-        file_contexts = read_file_contexts(asp.get_saved_file_path("plat_file_contexts"))
-        file_contexts += read_file_contexts(asp.get_saved_file_path("vendor_file_contexts"))
+    assert major >= 9, "Only Android 9+ is supported"
+    file_contexts = read_file_contexts(asp.get_saved_file_path("plat_file_contexts"))
+    file_contexts += read_file_contexts(asp.get_saved_file_path("vendor_file_contexts"))
     init = AndroidInit(asp)
     init.determine_hardware()
     init.read_configs()
@@ -52,7 +52,7 @@ if __name__ == "__main__":
     # graph.find_useless_type()
     pg: PolicyGraph = graph.build_graph()
     Logger.debug("Overlaying policy to filesystems")
-    res = FileSystemInstance(pg, init).instantiate()
+    res = FileSystemInstance(pg, init, file_contexts).instantiate()
     Logger.debug("main.py done")
 
 def main_process():

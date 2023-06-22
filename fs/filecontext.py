@@ -1,6 +1,6 @@
 import re
 from stat import S_IFCHR, S_IFIFO, S_IFDIR, S_IFBLK, S_IFREG, S_IFLNK, S_IFSOCK
-from typing import List
+from typing import Dict, List
 from android.sepolicy import SELinuxContext
 
 from utils.logger import Logger
@@ -13,17 +13,28 @@ F_MODE = {S_IFIFO: '-p',
           S_IFLNK: '-l',
           S_IFSOCK: '-s'}
 
-F_MODE_INV = dict([[v,k] for k,v in F_MODE.items()])
+'''
+  -b - Block Device
+◦ -c - Character Device
+◦ -d - Directory
+◦ -p - Named Pipe (FIFO)
+◦ -l - Symbolic Link
+◦ -s - Socket File
+◦ -- - Ordinary file
+'''
+
+F_MODE_INV: Dict[str, int] = dict([[v,k] for k,v in F_MODE.items()])
 
 
 class AndroidFileContext:
     '''对应一个Android文件系统中的文件上下文，包含一个正则表达式和一个SELinux上下文'''
-    def __init__(self, regex: re.Pattern, mode: str, context: SELinuxContext):
-        self.regex = regex      # re.Pattern
-        self.mode = mode        # str
+    def __init__(self, regex: re.Pattern, mode: int, context: SELinuxContext):
+        self.regex = regex      # re.Pattern 文件路径正则表达式
+        self.mode = mode        # file_type可能会有的一个值： pathname_regexp [file_type] security_context 
+                                # active/file_contexts 我猜测seandroid没有使用这个字段
         self.context = context  # SELinuxContext
 
-    def match(self, path, mode=None):
+    def match(self, path: str, mode: int = None) -> bool:
         if self.mode and mode:
             return (self.regex.match(path) is not None) and (mode & self.mode)
         else:
