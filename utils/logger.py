@@ -17,6 +17,10 @@ class Logger:
         _global_logger.warning(msg, *args, **kwargs)
 
     @staticmethod
+    def warn(msg: str, *args, **kwargs):
+        _global_logger.warning(msg, *args, **kwargs)
+
+    @staticmethod
     def error(msg: str, *args, **kwargs):
         _global_logger.error(msg, *args, **kwargs)
 

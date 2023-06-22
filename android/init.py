@@ -423,7 +423,7 @@ class AndroidInit:
 
     def execute(self, cmd: str, args: List[str]):
         '''Execute a command'''
-        Logger.debug("Executing command: %s %s", cmd, args)
+        # Logger.debug("Executing command: %s %s", cmd, args)
         if cmd == "trigger":
             assert len(args) == 1
             self.new_stage_trigger(args[0]) # trigger a new stage

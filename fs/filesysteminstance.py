@@ -1,4 +1,5 @@
 import re
+import networkx as nx
 from typing import List, Tuple
 from android.init import AndroidInit
 from android.sepolicy import SELinuxContext
@@ -46,6 +47,10 @@ class FileSystemInstance:
         # All files contain all of the metadata necessary to go forward
         self.apply_file_contexts()
 
+        Logger.debug("Inflating subjects...")
+        self.inflate_subjects()
+
+
 
         pass
 
@@ -56,7 +61,9 @@ class FileSystemInstance:
         for file in self.init.asp.combined_fs.files:
             label_from_file_context: bool = True    # 假设能够从file_context中获取到label
             fcmatches: List[AndroidFileContext] = self.get_file_context_matches(file)
-            # 没有匹配的文件context，或者文件是一个挂载点
+            # if file == '/data':
+            #     from IPython import embed; embed(); exit(1)
+            # XXX 没有匹配的文件context，或者文件是一个挂载点 or -> and
             if len(fcmatches) == 0 or file in self.init.asp.combined_fs.mount_points:
                 genfs_matches: List[Tuple[str, str, Context]] = []
                 # 遍历所有的挂载点，验证该文件是否是挂载的文件系统中的文件
@@ -75,21 +82,24 @@ class FileSystemInstance:
                             genfs_matches += [(mount_path, '/', self.sepol.fs_use[fstype].context)]
                             pass
                         pass
+                # if file == '/data':
+                #     from IPython import embed; embed(); exit(1)
                 if len(genfs_matches) == 0:
-                    # 寄
-                    if self.init.asp.combined_fs.files[file].selinux is None:
+                    if self.init.asp.combined_fs.files[file].selinux is None:   # 寄
                         dropped_files.append(file)
                         Logger.warn("No file context for %s" % file)
-                        continue
+                        continue    # 下一个文件
+                    else:
+                        primary_match: SELinuxContext = self.init.asp.combined_fs.files[file].selinux
                     pass
                 else:  # 生成了新的label
                     genfs_matches = sorted(genfs_matches, reverse=True, key=lambda x: x[1])
                     primary_path: str = genfs_matches[0][0]
-                    primary_match: SELinuxContext = SELinuxContext.FromString(genfs_matches[0][2])
+                    primary_match: SELinuxContext = SELinuxContext.FromString(str(genfs_matches[0][2]))
                     label_from_file_context = False
                     pass
                 pass
-            else:
+            else:   # 有在file context中匹配
                 ''' 在file_contexts文件中找到了匹配的文件context 找出最长的匹配
                 [AndroidFileContext<^/odm/etc/permissions(/.*)?$ -> u:object_r:odm_xml_file:s0>,
                 AndroidFileContext<^/(odm|vendor/odm)/etc(/.*)?$ -> u:object_r:vendor_configs_file:s0>,
@@ -100,12 +110,8 @@ class FileSystemInstance:
                     r = re.compile(r"\.|\^|\$|\?|\*|\+|\||\[|\(|\{")    # 一些通配符
                     regex = afc.regex.pattern[1:len(afc.regex.pattern) - 1] # 去掉开头的^和结尾的$
                     pos = r.search(regex)   # 找到第一个通配符的位置
-                    if pos:
-                        # 如果有通配符，那么就取通配符前面的字符串
-                        cur_prefix_len = pos.span()[0]
-                    else:
-                        cur_prefix_len = len(regex)
-                    if cur_prefix_len > max_prefix_len:
+                    cur_prefix_len = pos.span()[0] if pos else len(regex)
+                    if cur_prefix_len >= max_prefix_len:
                         max_prefix_len = cur_prefix_len
                         primary_match = afc.context
 
@@ -145,3 +151,21 @@ class FileSystemInstance:
 
         # heuristic: choose longest string as most specific match
         return sorted(matches, reverse=True, key=lambda x: x.regex.pattern)
+    
+    def inflate_subjects(self):
+        G: nx.DiGraph = self.sepol.G_allow
+        G_subject = nx.MultiDiGraph()
+
+        self.subjects = {}
+        self.subject_groups = {}
+        domain_attributes = set()
+
+        for domain in self.sepol.attributes['domain']:
+            pass
+
+        pass
+
+    pass
+
+pass
+
