@@ -22,7 +22,7 @@ class FilePolicy:
         self.perms = perms
         self.size = size
         self.link_path = os.readlink(path) if stat.S_ISLNK(perms) else ''
-        self.selinux = None
+        self.selinux: SELinuxContext = None
         self.capabilities: int = None
 
         # Collect MAC (SELinux) and other security policies (capabilities)

@@ -13,8 +13,8 @@ class PolicyGraph():
                  aliases: Dict[str, bool], 
                  genfs: Dict[str, List[Genfscon]], 
                  fs_use: Dict[str, FSUse] , 
-                 G_allow: nx.DiGraph, 
-                 G_transition: nx.DiGraph):
+                 G_allow: nx.MultiDiGraph, 
+                 G_transition: nx.MultiDiGraph):
         # PolicyGraph(classes, attributes, types, aliases, genfs, fs_use, G_allow, G_transition)
         self.classes = classes
         self.attributes = attributes
@@ -24,8 +24,8 @@ class PolicyGraph():
         self.aliases = aliases
         self.genfs = genfs
         self.fs_use = fs_use
-        self.G_allow = G_allow
-        self.G_transition = G_transition
+        self.G_allow: nx.MultiDiGraph = G_allow
+        self.G_transition: nx.MultiDiGraph = G_transition
 
 class SELinuxPolicyGraph(setools.SELinuxPolicy):
     pass
@@ -267,7 +267,8 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
             elif isinstance(terule_, TERule) or isinstance(terule_, FileNameTERule):
                 # "{0.ruletype} {0.source} {0.target}:{0.tclass} {0.default}".format(terule_)
                 assert terule_.ruletype == TERuletype.type_transition
-
+                # from IPython import embed; embed(); exit(1)
+                # type_transition ITouchservice crash_dump_exec:process crash_dump;
                 u_type = str(terule_.source)
                 # technically target is not the target
                 # default is the target type, whereas target is the object used to start the transition

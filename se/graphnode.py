@@ -1,6 +1,8 @@
 
+from typing import Dict, Set
 from android.dac import Cred
 from android.sepolicy import SELinuxContext
+from fs.filesystempolicy import FilePolicy
 
 
 class GraphNode:
@@ -33,12 +35,15 @@ class ProcessNode(GraphNode):
 
 
 class SubjectNode(GraphNode):
+    '''记录subject的父子关系'''
     def __init__(self, cred: Cred):
         super().__init__()
-        self.parents = set()
-        self.children = set()
+        self.parents : Set[SubjectNode] = set()
+        self.children: Set[SubjectNode] = set()
 
-        self.backing_files = {}
+        self.backing_files: Dict[str, FilePolicy] = {}
+        '''??? 实际的系统文件'''
+        
         self.cred: Cred = cred
     
     @property
@@ -49,6 +54,10 @@ class SubjectNode(GraphNode):
     def sid(self, v: SELinuxContext):
         self.cred.sid = v
     
+    def associate_file(self, file_obj: Dict[str, FilePolicy]):
+        self.backing_files.update(file_obj)
+        pass
+
     pass
 
 
