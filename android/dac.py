@@ -8,7 +8,7 @@ class Cred():
         self.uid = None
         self.gid = None
         self.groups: Set[int] = set()
-        self.sid = None # SELinuxContext
+        self.sid: SELinuxContext = None
         self.cap = Capabilities()
 
     def clear_groups(self):

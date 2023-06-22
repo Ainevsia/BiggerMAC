@@ -1,12 +1,14 @@
 import re
 import networkx as nx
-from typing import List, Tuple
+from typing import Dict, List, Set, Tuple
+from android.dac import Cred
 from android.init import AndroidInit
 from android.sepolicy import SELinuxContext
 from fs.filecontext import AndroidFileContext
+from se.graphnode import SubjectNode
 from se.sepolicygraph import PolicyGraph
 from utils.logger import Logger
-from setools.policyrep import Context
+from setools.policyrep import Context, Type
 
 class FileSystemInstance:
     def __init__(self, sepol: PolicyGraph, init: AndroidInit, file_contexts: List[AndroidFileContext]):
@@ -19,9 +21,11 @@ class FileSystemInstance:
         # self.file_mapping = {}
 
         # # Mixed instantiation
-        # self.subjects = {}
-        # self.subject_groups = {}
-        # self.domain_attributes = []
+        self.subjects: Dict[str, SubjectNode] = {}
+        '''所有的主体subject'''
+        self.subject_groups = {}
+        self.domain_attributes: List[str] = []
+        '''所有的domain'''
         # self.objects = {}
 
         # # Fully instantiated graph
@@ -139,7 +143,6 @@ class FileSystemInstance:
             pass
         Logger.info("Recovered %d file labels from file contexts" % recovered_labels)
         
-
     def get_file_context_matches(self, filename: str) -> List[AndroidFileContext]:
         '''返回所有匹配的文件context，选最长的那个'''
         matches: List[AndroidFileContext] = []
@@ -152,18 +155,70 @@ class FileSystemInstance:
         # heuristic: choose longest string as most specific match
         return sorted(matches, reverse=True, key=lambda x: x.regex.pattern)
     
+    def is_attribute(self, attr: str) -> bool:
+        return attr in self.sepol.attributes
+
+    def expand_attribute(self, attr: str) -> List[str]:
+        '''检查是否是type还是attribute，如果是attribute，返回所有的type'''
+        if self.is_attribute(attr):
+            return self.sepol.attributes[attr]
+        else:
+            return [attr]
+
     def inflate_subjects(self):
         G: nx.DiGraph = self.sepol.G_allow
         G_subject = nx.MultiDiGraph()
 
-        self.subjects = {}
         self.subject_groups = {}
-        domain_attributes = set()
+        domain_attributes: Set[str] = set()
 
-        for domain in self.sepol.attributes['domain']:
+        for domain in self.sepol.attributes['domain']:  # 遍历 `domain` attribute 中的所有 type
+            s: SubjectNode = SubjectNode(Cred())
+            s.sid = SELinuxContext.FromString("u:r:%s:s0" % domain)
+
+            assert domain not in self.subjects, "Duplicate subject %s" % domain
+            self.subjects[domain] = s
+
+            # 拥有domain attribute的所有type的所有atrribute 集合
+            attribute_membership: List[str] = self.sepol.types[str(domain)]
+
+            domain_attributes |= set(attribute_membership)
+
+            G_subject.add_node('domain', fillcolor='#f7bb00')
+            G_subject.add_edge('domain', domain)
+            # print(domain)
             pass
 
+        # Make sure not to include any attributes that have objects too!
+        good: List[str] = []
+        for attr in sorted(list(domain_attributes)):
+            bad = False
+            for type in self.expand_attribute(attr):
+                if type not in self.subjects:
+                    bad = True
+                    pass
+                else:
+                    if attr != "domain":
+                        G_subject.add_node(attr, fillcolor='#b700ff')
+                    G_subject.add_edge(attr, domain)
+            if attr not in G:
+                bad = True
+                pass
+            if not bad:
+                good += [attr]
+            pass
+        
+        self.domain_attributes = good
+
+        for attr in self.domain_attributes:
+            s = SubjectNode(Cred())
+            s.sid = SELinuxContext.FromString("u:r:%s:s0" % attr)
+            assert attr not in self.subject_groups
+            assert attr not in self.subjects
+            self.subject_groups[attr] = s
         pass
+
+        
 
     pass
 

@@ -8,7 +8,7 @@ class PolicyGraph():
     ''''''
     def __init__(self, 
                  classes: Dict[str, Dict[str, Union[List[str], str]]], 
-                 attributes: Dict[str, List[Type]], 
+                 attributes: Dict[str, List[str]], 
                  types: Dict[str, List[str]], 
                  aliases: Dict[str, bool], 
                  genfs: Dict[str, List[Genfscon]], 
@@ -18,7 +18,9 @@ class PolicyGraph():
         # PolicyGraph(classes, attributes, types, aliases, genfs, fs_use, G_allow, G_transition)
         self.classes = classes
         self.attributes = attributes
+        '''所有拥有 attribute 的 type 组成的list'''
         self.types = types
+        '''一个type的所有attribute，如果有的话；如果是alias，记录它的type'''
         self.aliases = aliases
         self.genfs = genfs
         self.fs_use = fs_use
@@ -157,7 +159,7 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
 
 
         classes: Dict[str, Dict[str, Union[List[str], str, None]]] = {}
-        attributes: Dict[str, List[Type]] = {}  # 所有拥有attribute的type
+        attributes: Dict[str, List[str]] = {}   # 所有拥有attribute的type
         commons: Dict[str, List[str]] = {}      # 记录一个common的所有perms
         types: Dict[str, List[str]] = {}        # 一个type的所有attribute，如果有的话；如果是alias，记录它的type
         aliases: Dict[str, bool] = {}           # 记录一个type是否实际上是一个alias
@@ -188,7 +190,7 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
             name = str(type_)
 
             for attr in type_.attributes():
-                attributes[str(attr)] += [type_]
+                attributes[str(attr)] += [str(type_)]
 
             for alias in type_.aliases():
                 types[str(alias)] = name
