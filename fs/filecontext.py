@@ -29,10 +29,13 @@ F_MODE_INV: Dict[str, int] = dict([[v,k] for k,v in F_MODE.items()])
 class AndroidFileContext:
     '''对应一个Android文件系统中的文件上下文，包含一个正则表达式和一个SELinux上下文'''
     def __init__(self, regex: re.Pattern, mode: int, context: SELinuxContext):
-        self.regex = regex      # re.Pattern 文件路径正则表达式
+        self.regex = regex
+        '''re.Pattern 文件路径正则表达式'''
+        
         self.mode = mode        # file_type可能会有的一个值： pathname_regexp [file_type] security_context 
                                 # active/file_contexts 我猜测seandroid没有使用这个字段
-        self.context = context  # SELinuxContext
+                                
+        self.context: SELinuxContext = context
 
     def match(self, path: str, mode: int = None) -> bool:
         if self.mode and mode:

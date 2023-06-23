@@ -24,30 +24,29 @@ OBJ_COLOR_MAP: Dict[str, str] = {
 class FileSystemInstance:
     '''巨型类，可以理解为一个实际运行的文件系统的实例'''
     def __init__(self, sepol: PolicyGraph, init: AndroidInit, file_contexts: List[AndroidFileContext]):
-        self.sepol = sepol
-        self.init = init
-        # 从file_contextx文件中读取的文件context
-        self.file_contexts = file_contexts
-        
+        self.sepol: PolicyGraph = sepol
+        self.init: AndroidInit = init
+        self.file_contexts: List[AndroidFileContext] = file_contexts
+        '''从file_contextx文件中读取的文件context'''
 
         self.file_mapping: Dict[str, Dict[str, FilePolicy]] = {}
         '''type -> {filename -> FilePolicy}'''
 
         # # Mixed instantiation
         self.subjects: Dict[str, SubjectNode] = {}
-        '''所有的主体 subject => SubjectNode， 使用type名进行索引'''
+        '''所有实例化的主体， 使用type名进行索引'''
 
-        self.subject_groups = {}
-        '''???'''
+        self.subject_groups: Dict[str, SubjectNode] = {}
+        '''domain 中 Subject 可能有的其他attribute, 使用attr名进行索引'''
 
         self.domain_attributes: List[str] = []
-        '''所有的domain'''
+        '''所有拥有  domain attribute 的 type 的所属的所有 attribute'''
 
         self.objects = {}
         ''' 111 111'''
 
-        # # Fully instantiated graph
-        # self.processes = {}
+        self.processes = {}
+        '''Fully instantiated graph'''
 
     def instantiate(self):
         """
@@ -66,6 +65,7 @@ class FileSystemInstance:
         """
 
         Logger.debug("Applying file contexts to VFS...")
+
         # All files contain all of the metadata necessary to go forward
         self.apply_file_contexts()
 
@@ -87,9 +87,8 @@ class FileSystemInstance:
         for file in self.init.asp.combined_fs.files:
             label_from_file_context: bool = True    # 假设能够从file_context中获取到label
             fcmatches: List[AndroidFileContext] = self.get_file_context_matches(file)
-            # if file == '/data':
-            #     from IPython import embed; embed(); exit(1)
-            # XXX 没有匹配的文件context，或者文件是一个挂载点 or -> and
+
+            # XXX 没有匹配的文件context，或者文件是一个挂载点
             if len(fcmatches) == 0 or file in self.init.asp.combined_fs.mount_points:
                 genfs_matches: List[Tuple[str, str, Context]] = []
                 # 遍历所有的挂载点，验证该文件是否是挂载的文件系统中的文件
@@ -179,67 +178,71 @@ class FileSystemInstance:
         return attr in self.sepol.attributes
 
     def expand_attribute(self, attr: str) -> List[str]:
-        '''检查是否是type还是attribute，如果是attribute，返回所有的type'''
+        '''将attr展开为type'''
         if self.is_attribute(attr):
             return self.sepol.attributes[attr]
         else:
             return [attr]
 
     def inflate_subjects(self):
-        G: nx.DiGraph = self.sepol.G_allow
+        G: nx.MultiDiGraph = self.sepol.G_allow
+        G_subject: nx.MultiDiGraph = nx.MultiDiGraph()   # a new Graph !! (Local)
 
-        G_subject = nx.MultiDiGraph()   # a new Graph !!
-
+        # 所有拥有  domain attribute 的 type 的所属的所有 attribute
         domain_attributes: Set[str] = set()
 
-        # from IPython import embed; embed(); exit(1)
+        G_subject.add_node('domain', fillcolor='#f7bb00')
+
         # All types used for processes. attribute domain
         for domain in self.sepol.attributes['domain']:  # 遍历 `domain` attribute 中的所有 type
             s: SubjectNode = SubjectNode(Cred())        # 创建一个新的subject
             s.sid = SELinuxContext.FromString("u:r:%s:s0" % domain)
 
             assert domain not in self.subjects, "Duplicate subject %s" % domain
+            assert domain not in self.sepol.aliases, "Subject %s is an alias" % domain
+            
             self.subjects[domain] = s
 
             # 拥有domain attribute的所有type的所有atrribute 集合
-            attribute_membership: List[str] = self.sepol.types[str(domain)]
+            attribute_membership: List[str] = self.sepol.types[domain]
 
             domain_attributes |= set(attribute_membership)
 
-            G_subject.add_node('domain', fillcolor='#f7bb00')
             G_subject.add_edge('domain', domain)
-            # print(domain)
-            pass
 
         # Make sure not to include any attributes that have objects too!
         good: List[str] = []
-        for attr in sorted(list(domain_attributes)):
+        for attr in domain_attributes:  # 遍历拥有domain attr的所有type的所有attr
             bad = False
+            assert attr not in self.sepol.types
             for type in self.expand_attribute(attr):
-                if type not in self.subjects:
+                if type not in self.subjects:   # 这个type不在domain域中
                     bad = True
-                    pass
-                else:
+                else:   # type 在 subjects 中
                     if attr != "domain":
                         G_subject.add_node(attr, fillcolor='#b700ff')
                     G_subject.add_edge(attr, domain)
-            if attr not in G:
+            if attr not in G:   # 没有允许的规则，无效的attr，不产生影响
                 bad = True
-                pass
             if not bad:
                 good += [attr]
             
-        
         self.domain_attributes = good
 
         for attr in self.domain_attributes:
-            s = SubjectNode(Cred())
+            s: SubjectNode = SubjectNode(Cred())
             s.sid = SELinuxContext.FromString("u:r:%s:s0" % attr)
             assert attr not in self.subject_groups
             assert attr not in self.subjects
             self.subject_groups[attr] = s
+            
+        # G = G_subject
+        # nx.set_node_attributes(G, 'filled,solid', 'style')
+        # import pygraphviz
+        # AG = nx.nx_agraph.to_agraph(G)
+        # AG.layout(prog='sfdp')
+        # AG.draw("G_allow.svg", prog="sfdp", format='svg', args='-Gsmoothing=rng -Goverlap=prism2000 -Goutputorder=edgesfirst -Gsep=+2')
         
-    
     def gen_file_mapping(self):
         """
         Create an index of SELinux types to filesystem objects that we know about

@@ -14,7 +14,7 @@ class PolicyGraph:
         self.classes: Dict[str, Class2] = {}
 
         self.attributes: Dict[str, List[str]] = {}
-        '''所有拥有 attribute 的 type 组成的list'''
+        '''展开attr为type：所有拥有 attribute 的 type 组成的list'''
 
         self.commons: Dict[str, List[str]] = {}
         '''记录一个common的所有perms'''
@@ -116,7 +116,6 @@ class SELinuxPolicyGraph(setools.SELinuxPolicy):
                     # AG = nx.nx_agraph.to_agraph(G)
                     # AG.layout(prog='sfdp')
                     # AG.draw("G_allow.svg", prog="sfdp", format='svg', args='-Gsmoothing=rng -Goverlap=prism2000 -Goutputorder=edgesfirst -Gsep=+2')
-
             elif isinstance(terule_, TERule) or isinstance(terule_, FileNameTERule):
                 assert terule_.ruletype == TERuletype.type_transition
                 # type_transition ITouchservice crash_dump_exec:process crash_dump;
