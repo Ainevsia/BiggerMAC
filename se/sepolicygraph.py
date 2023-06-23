@@ -32,7 +32,9 @@ class PolicyGraph:
         '''由于伪文件系统不支持labeling，使用fs_use_task记录标签'''
 
         self.G_allow: nx.MultiDiGraph = nx.MultiDiGraph()
+        '''teclass perms'''
         self.G_transition: nx.MultiDiGraph = nx.MultiDiGraph()
+        '''teclass through name'''
 
 class SELinuxPolicyGraph(setools.SELinuxPolicy):
     def build_graph(self) -> PolicyGraph:

@@ -105,10 +105,6 @@ class FileSystemInstance:
                         elif fstype in self.sepol.fs_use:
                             if fstype != "tmpfs": continue  # 目前只处理tmpfs
                             genfs_matches += [(mount_path, '/', self.sepol.fs_use[fstype].context)]
-                            pass
-                        pass
-                # if file == '/data':
-                #     from IPython import embed; embed(); exit(1)
                 if len(genfs_matches) == 0:
                     if self.init.asp.combined_fs.files[file].selinux is None:   # 寄
                         dropped_files.append(file)
@@ -123,7 +119,6 @@ class FileSystemInstance:
                     primary_match: SELinuxContext = SELinuxContext.FromString(str(genfs_matches[0][2]))
                     label_from_file_context = False
                     pass
-                pass
             else:   # 有在file context中匹配
                 ''' 在file_contexts文件中找到了匹配的文件context 找出最长的匹配
                 [AndroidFileContext<^/odm/etc/permissions(/.*)?$ -> u:object_r:odm_xml_file:s0>,
@@ -249,27 +244,25 @@ class FileSystemInstance:
         from our metadata extraction. Note, not all types in the graph will have this
         available. We assume files can only have a single type for their lifetime.
         A different typed file, even with the same path, would be considered a different file.
+        set self.file_mapping
         """
         G = self.sepol.G_allow
         # associate relevant types with known files
         for file in self.init.asp.combined_fs.files:
             sid = self.init.asp.combined_fs.files[file].selinux
             # dereference alias as those nodes dont exist
-            ty = self.sepol.types[sid.type][0] if sid.type in self.sepol.aliases else sid.type
-            if ty not in G:
+            ty: str = self.sepol.types[sid.type] if sid.type in self.sepol.aliases else sid.type
+            if ty not in G: # 无允许的规则，不产生影响
                 continue
             if ty not in self.file_mapping:
                 self.file_mapping[ty] = {}  # touch
             # associate a SID (ty) with a file (f) and its (perm)issions
             self.file_mapping[ty][file] = self.init.asp.combined_fs.files[file]
 
-            pass
-        pass
-
     # This proc is simplified to make clear
     def recover_subject_hierarchy(self):
-        '''恢复进程关系？还没完全能明白'''
-        G = self.sepol.G_allow
+        '''初步恢复subject的层次关系'''
+        G_allow = self.sepol.G_allow
         Gt = self.sepol.G_transition
 
         self.gen_file_mapping()
@@ -278,22 +271,23 @@ class FileSystemInstance:
         #  * We need to link domains to their underlying executables
 
         # type_transition ITouchservice crash_dump_exec:process crash_dump;
-        type_transition_classes = nx.get_edge_attributes(Gt, 'teclass') # :process
+        type_transition_classes: Dict[Tuple[str, str, int], str] = nx.get_edge_attributes(Gt, 'teclass') # :process
 
-        domain_transitions = { k:v for k,v in type_transition_classes.items() if v == "process" }
+        domain_transitions: Dict[Tuple[str, str, int], str] = { k:v for k,v in type_transition_classes.items() if v == "process" }
         Logger.info("Back-propagating %d domain transitions", len(domain_transitions))
 
         # Used to track which domains didn't even have a process type_transition
         has_backing_file_transition: Set[str] = set([])
 
         ## Back propagate executable files to domain
-        parent: str
-        child: str
+        parent: str # source 
+        child: str  # target
+        e: int
         for (parent, child, e) in domain_transitions:
-            attrs = Gt[parent][child][e]
-            object_type: str = attrs["through"]
+            attrs: Dict[str, str] = Gt[parent][child][e]    # {'teclass': 'process', 'through': 'crash_dump_exec', 'name': None}
+            object_type: str = attrs["through"]             # 必然有 through 属性
 
-            has_backing_file_transition |= set([child]) # make a set ! set(child) :TypeError: 'int' object is not iterable
+            has_backing_file_transition |= set([child])
             if object_type not in self.file_mapping:
                 # This means we didn't find any backing file for this subject on the filesystem image
                 # This can mean we're missing files OR that these subjects do not have an explicitly defined
@@ -305,13 +299,12 @@ class FileSystemInstance:
             self.subjects[child].parents   |= set([self.subjects[parent]])
 
             # Map the found files to the domain
-            # child_obj.associate_file(self.file_mapping[object_type]["files"])
             self.subjects[child].associate_file(self.file_mapping[object_type])
         
-        ## Recover dyntransitions for the process tree
-        for subject_name, subject in self.subjects.items():
-            for child in G[subject_name]:
-                for _, edge in G[subject_name][child].items():
+        ## Recover dyntransitions for the process tree 注意这个是allow 的规则中的允许
+        for subject_name, subject in self.subjects.items():             # 遍历所有的subject
+            for child in G_allow[subject_name]:                         # 遍历所有的child
+                for _, edge in G_allow[subject_name][child].items():    # 遍历所有的edge
                     if edge["teclass"] == "process" and \
                         ("dyntransition" in edge["perms"] or "transition" in edge["perms"]) and subject_name != child:
                         # We may have already caught this during the file mapping, but that's why
@@ -319,7 +312,7 @@ class FileSystemInstance:
                         for c in self.expand_attribute(child):
                             subject.children         |= set([self.subjects[c]])
                             self.subjects[c].parents |= set([subject])
-        
+
         ## Special cases
         ##
         ##  1. init - first process created. may not have an explicit transition due to selinux loading time
@@ -342,28 +335,24 @@ class FileSystemInstance:
         ##  3. zygote - forked from init, assigned fixed permissions
         # zygote children that have no known files are likely app based. Associate app_process files with them
         zygote_files = self.subjects["zygote"].backing_files
+        # '/system/bin/app_process32': /home/u/BiggerMAC/firmwares_mnt/Huawei_Mate_20/system/system/bin/app_process32
         if len(zygote_files) == 0:
-            Logger.error("zygote subject has no associated files")
             raise ValueError("zygote has no associated files")
         
         # Propagate zygote backed files to its children (zygote just forks, not execs, itself into children)
         # http://androidxref.com/8.1.0_r33/xref/frameworks/base/core/jni/com_android_internal_os_Zygote.cpp#487
-        for s in self.subjects["zygote"].children:
-            # Don't give zygote files to subjects that already have some
-            if len(s.backing_files) == 0:
-                for fn, f in zygote_files.items():
-                    s.associate_file({fn:f})
+        for s in self.subjects["zygote"].children:   
+            if len(s.backing_files) == 0:   # Don't give zygote files to subjects that already have some
+                s.associate_file(zygote_files)
 
         ##  4. Final chance for file recovery (heuristic)
         no_backing_file_transitions = set(list(self.subjects)) - has_backing_file_transition
         # exclude the obvious app domain
         no_backing_file_transitions -= set(self.expand_attribute('appdomain'))
-
-
-
+        # from IPython import embed; embed(); exit(1)
         # Okay, we have a list of domains that were clearly from dyntransitions
         # We have no mapping from them to their executable. Perform a last ditch search
-        for domain in sorted(list(no_backing_file_transitions)):
+        for domain in no_backing_file_transitions:
             # an earlier special case found something
             if len(self.subjects[domain].backing_files) > 0:
                 continue
@@ -371,16 +360,12 @@ class FileSystemInstance:
             found_files = self.init.asp.combined_fs.find('*' + domain)
 
             if len(found_files) == 1:
-                # fsp =  self.init.asp.combined_fs[found_files[0]]
+                fsp =  self.init.asp.combined_fs[found_files[0]]
                 Logger.info("Last ditch file mapping recovery for %s found '%s'", domain, found_files[0])
-                self.subjects[domain].associate_file(found_files[0])
+                self.subjects[domain].associate_file({found_files[0]: fsp})
             else:
                 Logger.info("Can not find associate file for domain '%s'", domain)
 
-
-            from IPython import embed; embed(); exit(1)
-        
-        pass
 
     def inflate_graph(self, expand_all_objects: bool = True, skip_fileless_subjects: bool = True):
         """

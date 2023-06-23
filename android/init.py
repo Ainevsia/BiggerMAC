@@ -184,7 +184,6 @@ class AndroidInit:
     def read_init_rc(self, path: str):
         '''Reads the init.rc file and returns a list of sections'''
         if path not in self.asp.combined_fs:
-            from IPython import embed; embed()  
             raise FileNotFoundError(f"init.rc file not found at {path}")
         rc_path = self.asp.combined_fs[path]
 

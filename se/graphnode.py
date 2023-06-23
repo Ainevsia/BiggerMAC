@@ -42,7 +42,7 @@ class SubjectNode(GraphNode):
         self.children: Set[SubjectNode] = set()
 
         self.backing_files: Dict[str, FilePolicy] = {}
-        '''??? 实际的系统文件'''
+        '''拥有此type的实际的系统文件'''
         
         self.cred: Cred = cred
     
@@ -56,11 +56,9 @@ class SubjectNode(GraphNode):
     
     def associate_file(self, file_obj: Dict[str, FilePolicy]):
         self.backing_files.update(file_obj)
-        pass
 
     def get_node_name(self):
         return "subject:%s" % (self.sid.type)
-    pass
 
 
 pass
