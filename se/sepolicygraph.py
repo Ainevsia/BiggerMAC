@@ -13,14 +13,14 @@ class PolicyGraph:
     def __init__(self):
         self.classes: Dict[str, Class2] = {}
 
-        self.attributes: Dict[str, List[str]] = {}
-        '''展开attr为type：所有拥有 attribute 的 type 组成的list'''
-
         self.commons: Dict[str, List[str]] = {}
         '''记录一个common的所有perms'''
 
-        self.types: Dict[str, Union[str, List[str]]] = {}
-        '''一个type的所有attribute，如果有的话(List[str])；如果是alias，记录它的type (str)'''
+        self.attributes: Dict[str, List[str]] = {}  # 204 attributes 可以理解为对 domain(type) 的分组
+        '''映射 attr 为 type: 所有拥有 attribute 的 type 组成的list'''
+
+        self.types: Dict[str, Union[str, List[str]]] = {}   # 2033
+        '''映射 type 为 attr: type 所属的所有 attribute'''
 
         self.aliases: Dict[str, bool] = {}
         '''记录一个type是否实际上是一个alias'''
@@ -35,6 +35,8 @@ class PolicyGraph:
         '''teclass perms'''
         self.G_transition: nx.MultiDiGraph = nx.MultiDiGraph()
         '''teclass through name'''
+        self.G_dataflow: nx.MultiDiGraph = nx.MultiDiGraph()
+        '''dataflow graph'''
 
 class SELinuxPolicyGraph(setools.SELinuxPolicy):
     def build_graph(self) -> PolicyGraph:

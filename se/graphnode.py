@@ -57,7 +57,7 @@ class SubjectNode(GraphNode):
     def associate_file(self, file_obj: Dict[str, FilePolicy]):
         self.backing_files.update(file_obj)
 
-    def get_node_name(self):
+    def get_node_name(self) -> str:
         return "subject:%s" % (self.sid.type)
 
 

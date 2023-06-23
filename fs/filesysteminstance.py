@@ -11,7 +11,6 @@ from se.sepolicygraph import PolicyGraph
 from utils.logger import Logger
 from setools.policyrep import Context, Type
 
-
 OBJ_COLOR_MAP: Dict[str, str] = {
     'subject' : '#b7bbff',
     'subject_group' : 'white',
@@ -40,7 +39,7 @@ class FileSystemInstance:
         '''domain 中 Subject 可能有的其他attribute, 使用attr名进行索引'''
 
         self.domain_attributes: List[str] = []
-        '''所有拥有  domain attribute 的 type 的所属的所有 attribute'''
+        '''所有process所可能拥有的 attribute'''
 
         self.objects = {}
         ''' 111 111'''
@@ -76,6 +75,7 @@ class FileSystemInstance:
         self.recover_subject_hierarchy()
 
         Logger.debug("Inflating subject dataflow graph...")
+        self.inflate_graph()
 
         pass
 
@@ -180,50 +180,44 @@ class FileSystemInstance:
             return [attr]
 
     def inflate_subjects(self):
+        '''提取所有能成为process的type，inflate 为 subject'''
         G: nx.MultiDiGraph = self.sepol.G_allow
-        G_subject: nx.MultiDiGraph = nx.MultiDiGraph()   # a new Graph !! (Local)
 
         # 所有拥有  domain attribute 的 type 的所属的所有 attribute
         domain_attributes: Set[str] = set()
 
-        G_subject.add_node('domain', fillcolor='#f7bb00')
+        # attribute domain collects All types used for processes.
+        for process_type in self.sepol.attributes['domain']:    # 遍历 `domain` attribute 中的所有 type
+            s: SubjectNode = SubjectNode(Cred())                # 创建一个新的subject
+            s.sid = SELinuxContext.FromString("u:r:%s:s0" % process_type)
 
-        # All types used for processes. attribute domain
-        for domain in self.sepol.attributes['domain']:  # 遍历 `domain` attribute 中的所有 type
-            s: SubjectNode = SubjectNode(Cred())        # 创建一个新的subject
-            s.sid = SELinuxContext.FromString("u:r:%s:s0" % domain)
-
-            assert domain not in self.subjects, "Duplicate subject %s" % domain
-            assert domain not in self.sepol.aliases, "Subject %s is an alias" % domain
+            assert process_type not in self.subjects        # duplicate
+            assert process_type not in self.sepol.aliases   # not an alias
             
-            self.subjects[domain] = s
+            self.subjects[process_type] = s
 
-            # 拥有domain attribute的所有type的所有atrribute 集合
-            attribute_membership: List[str] = self.sepol.types[domain]
-
-            domain_attributes |= set(attribute_membership)
-
-            G_subject.add_edge('domain', domain)
+            # 该process_type的所有attribute
+            domain_attributes |= set(self.sepol.types[process_type])
 
         # Make sure not to include any attributes that have objects too!
-        good: List[str] = []
+        effective_attr: List[str] = []
         for attr in domain_attributes:  # 遍历拥有domain attr的所有type的所有attr
-            bad = False
+            no_effect = False
             assert attr not in self.sepol.types
             for type in self.expand_attribute(attr):
                 if type not in self.subjects:   # 这个type不在domain域中
-                    bad = True
-                else:   # type 在 subjects 中
-                    if attr != "domain":
-                        G_subject.add_node(attr, fillcolor='#b700ff')
-                    G_subject.add_edge(attr, domain)
+                    no_effect = True  # pdx_bufferhub_client_endpoint_socket pdx_display_client_endpoint_socket hisecd_socket pdx_performance_client_endpoint_socket pdx_display_vsync_endpoint_socket
             if attr not in G:   # 没有允许的规则，无效的attr，不产生影响
-                bad = True
-            if not bad:
-                good += [attr]
+                no_effect = True
+            if not no_effect:
+                effective_attr += [attr]
+            else:
+                # mlstrustedsubject system_writes_vendor_properties_violators data_between_core_and_vendor_violators
+                pass
             
-        self.domain_attributes = good
+        self.domain_attributes = effective_attr
 
+        # write subject_groups
         for attr in self.domain_attributes:
             s: SubjectNode = SubjectNode(Cred())
             s.sid = SELinuxContext.FromString("u:r:%s:s0" % attr)
@@ -231,13 +225,6 @@ class FileSystemInstance:
             assert attr not in self.subjects
             self.subject_groups[attr] = s
             
-        # G = G_subject
-        # nx.set_node_attributes(G, 'filled,solid', 'style')
-        # import pygraphviz
-        # AG = nx.nx_agraph.to_agraph(G)
-        # AG.layout(prog='sfdp')
-        # AG.draw("G_allow.svg", prog="sfdp", format='svg', args='-Gsmoothing=rng -Goverlap=prism2000 -Goutputorder=edgesfirst -Gsep=+2')
-        
     def gen_file_mapping(self):
         """
         Create an index of SELinux types to filesystem objects that we know about
@@ -366,7 +353,6 @@ class FileSystemInstance:
             else:
                 Logger.info("Can not find associate file for domain '%s'", domain)
 
-
     def inflate_graph(self, expand_all_objects: bool = True, skip_fileless_subjects: bool = True):
         """
         Create all possible subjects and objects from the MAC policy and link
@@ -375,27 +361,26 @@ class FileSystemInstance:
         G = self.sepol.G_allow
         Gt = self.sepol.G_transition
 
-        # Create our dataflow graph
-        GS = self.sepol.G_dataflow = nx.MultiDiGraph()
+        GS = self.sepol.G_dataflow
         for _, s in self.subjects.items():
             if skip_fileless_subjects and len(s.backing_files) == 0:
                 continue
             GS.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject'])
 
-        # for attr in self.subject_groups.keys():
-        #     s = self.subject_groups[attr]
+        for attr in self.subject_groups:
+            s = self.subject_groups[attr]
+            # from IPython import embed; embed(); exit(1)
+            GS.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject_group'])
 
-        #     GS.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject_group'])
+            for domain in self.expand_attribute(attr):
+                if domain not in self.subjects: #  this cannot happen
+                    raise ValueError("Type member %s of attribute %s not a subject!" % (domain, attr))
 
-        #     for domain in self.expand_attribute(attr):
-        #         if domain not in self.subjects:
-        #             raise ValueError("Type member %s of attribute %s not a subject!" % (domain, attr))
+                if skip_fileless_subjects and len(self.subjects[domain].backing_files) == 0:
+                    continue
 
-        #         if skip_fileless_subjects and len(self.subjects[domain].backing_files) == 0:
-        #             continue
-
-        #         # add a is-a edge between the subjects as they are effectively the same
-        #         GS.add_edge(self.subjects[domain].get_node_name(), s.get_node_name())
+                # add a is-a edge between the subjects as they are effectively the same
+                GS.add_edge(self.subjects[domain].get_node_name(), s.get_node_name())
 
     pass
 
