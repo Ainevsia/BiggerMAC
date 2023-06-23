@@ -49,7 +49,6 @@ if __name__ == "__main__":
         sepolicy = asp.get_saved_file_path("precompiled_sepolicy")
     if not sepolicy: raise Exception("No sepolicy file found")
     graph = SELinuxPolicyGraph(sepolicy)
-    # graph.find_useless_type()
     pg: PolicyGraph = graph.build_graph()
     Logger.debug("Overlaying policy to filesystems")
 
