@@ -55,6 +55,7 @@ class SubjectNode(GraphNode):
         self.cred.sid = v
     
     def associate_file(self, file_obj: Dict[str, FilePolicy]):
+        '''set SubjectNode's backing_files'''
         self.backing_files.update(file_obj)
 
     def get_node_name(self) -> str:

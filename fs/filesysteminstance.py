@@ -29,14 +29,14 @@ class FileSystemInstance:
         '''从file_contextx文件中读取的文件context'''
 
         self.file_mapping: Dict[str, Dict[str, FilePolicy]] = {}
-        '''type -> {filename -> FilePolicy}'''
+        '''type -> filename 反向映射'''
 
         # # Mixed instantiation
         self.subjects: Dict[str, SubjectNode] = {}
         '''所有实例化的主体， 使用type名进行索引'''
 
         self.subject_groups: Dict[str, SubjectNode] = {}
-        '''domain 中 Subject 可能有的其他attribute, 使用attr名进行索引'''
+        '''所有process可能有的其他attribute, 使用attr名进行索引'''
 
         self.domain_attributes: List[str] = []
         '''所有process所可能拥有的 attribute'''
@@ -204,20 +204,17 @@ class FileSystemInstance:
         for attr in domain_attributes:  # 遍历拥有domain attr的所有type的所有attr
             no_effect = False
             assert attr not in self.sepol.types
+            if attr not in G:   # 没有允许的规则，无效的attr，不产生影响
+                continue
             for type in self.expand_attribute(attr):
                 if type not in self.subjects:   # 这个type不在domain域中
-                    no_effect = True  # pdx_bufferhub_client_endpoint_socket pdx_display_client_endpoint_socket hisecd_socket pdx_performance_client_endpoint_socket pdx_display_vsync_endpoint_socket
-            if attr not in G:   # 没有允许的规则，无效的attr，不产生影响
-                no_effect = True
+                    no_effect = True
+                    break
             if not no_effect:
                 effective_attr += [attr]
-            else:
-                # mlstrustedsubject system_writes_vendor_properties_violators data_between_core_and_vendor_violators
-                pass
             
         self.domain_attributes = effective_attr
 
-        # write subject_groups
         for attr in self.domain_attributes:
             s: SubjectNode = SubjectNode(Cred())
             s.sid = SELinuxContext.FromString("u:r:%s:s0" % attr)
@@ -226,12 +223,11 @@ class FileSystemInstance:
             self.subject_groups[attr] = s
             
     def gen_file_mapping(self):
-        """
+        """set file_mapping
         Create an index of SELinux types to filesystem objects that we know about
         from our metadata extraction. Note, not all types in the graph will have this
         available. We assume files can only have a single type for their lifetime.
         A different typed file, even with the same path, would be considered a different file.
-        set self.file_mapping
         """
         G = self.sepol.G_allow
         # associate relevant types with known files
@@ -239,7 +235,7 @@ class FileSystemInstance:
             sid = self.init.asp.combined_fs.files[file].selinux
             # dereference alias as those nodes dont exist
             ty: str = self.sepol.types[sid.type] if sid.type in self.sepol.aliases else sid.type
-            if ty not in G: # 无允许的规则，不产生影响
+            if ty not in G:
                 continue
             if ty not in self.file_mapping:
                 self.file_mapping[ty] = {}  # touch
@@ -248,7 +244,7 @@ class FileSystemInstance:
 
     # This proc is simplified to make clear
     def recover_subject_hierarchy(self):
-        '''初步恢复subject的层次关系'''
+        '''遍历type_transition allow rule, 为每个subject设置find_associated_files'''
         G_allow = self.sepol.G_allow
         Gt = self.sepol.G_transition
 
@@ -259,18 +255,17 @@ class FileSystemInstance:
 
         # type_transition ITouchservice crash_dump_exec:process crash_dump;
         type_transition_classes: Dict[Tuple[str, str, int], str] = nx.get_edge_attributes(Gt, 'teclass') # :process
-
         domain_transitions: Dict[Tuple[str, str, int], str] = { k:v for k,v in type_transition_classes.items() if v == "process" }
         Logger.info("Back-propagating %d domain transitions", len(domain_transitions))
 
-        # Used to track which domains didn't even have a process type_transition
-        has_backing_file_transition: Set[str] = set([])
+        # Used to track which domains didn't even have a `process type_transition` rule allowed
+        has_backing_file_transition: Set[str] = set()
 
         ## Back propagate executable files to domain
         parent: str # source 
         child: str  # target
         e: int
-        for (parent, child, e) in domain_transitions:
+        for (parent, child, e) in domain_transitions:       # each `type_transition` rule
             attrs: Dict[str, str] = Gt[parent][child][e]    # {'teclass': 'process', 'through': 'crash_dump_exec', 'name': None}
             object_type: str = attrs["through"]             # 必然有 through 属性
 
@@ -288,14 +283,13 @@ class FileSystemInstance:
             # Map the found files to the domain
             self.subjects[child].associate_file(self.file_mapping[object_type])
         
-        ## Recover dyntransitions for the process tree 注意这个是allow 的规则中的允许
+        ## Recover dyntransitions for the process tree 注意这个是allow 的规则中的允许,但并不是自动转换
         for subject_name, subject in self.subjects.items():             # 遍历所有的subject
-            for child in G_allow[subject_name]:                         # 遍历所有的child
+            for child in G_allow[subject_name]:                         # each `allow` rule for type `subject_name`
                 for _, edge in G_allow[subject_name][child].items():    # 遍历所有的edge
                     if edge["teclass"] == "process" and \
                         ("dyntransition" in edge["perms"] or "transition" in edge["perms"]) and subject_name != child:
-                        # We may have already caught this during the file mapping, but that's why
-                        # we're dealing with sets
+                        # We may have already caught this during the file mapping, but that's why we're dealing with sets
                         for c in self.expand_attribute(child):
                             subject.children         |= set([self.subjects[c]])
                             self.subjects[c].parents |= set([subject])
