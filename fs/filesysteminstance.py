@@ -1,13 +1,13 @@
 import re
 import networkx as nx
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Set, Tuple, Union
 from android.dac import Cred
 from android.init import AndroidInit
 from android.sepolicy import SELinuxContext
 from fs.filecontext import AndroidFileContext
 from fs.filesystempolicy import FilePolicy
-from se.graphnode import SubjectNode
-from se.sepolicygraph import PolicyGraph
+from se.graphnode import FileNode, GraphNode, IPCNode, SubjectNode
+from se.sepolicygraph import Class2, PolicyGraph
 from utils.logger import Logger
 from setools.policyrep import Context, Type
 
@@ -19,6 +19,8 @@ OBJ_COLOR_MAP: Dict[str, str] = {
     'socket' : 'orange',
     'unknown' : 'red',
 }
+
+AllowEdge = Dict[str, Union[str, List[str]]]
 
 class FileSystemInstance:
     '''巨型类，可以理解为一个实际运行的文件系统的实例'''
@@ -347,6 +349,102 @@ class FileSystemInstance:
             else:
                 Logger.info("Can not find associate file for domain '%s'", domain)
 
+    def get_object_node(self, edge: AllowEdge) -> GraphNode:
+        '''allow rule {'teclass': 'lnk_file', 'perms': ['getattr']}'''
+        teclass: str = edge["teclass"]
+        cls: Class2 = self.sepol.classes[teclass]
+        node = None
+        
+        if cls.inherits is not None:
+            match cls.inherits:
+                case "file":
+                    node = FileNode()
+                case "socket":
+                    node = IPCNode("socket")
+                case "ipc":
+                    node = IPCNode(teclass)
+                case "cap" | "cap2":
+                    node = SubjectNode(Cred())
+        else:
+            match cls:
+                case 'drmservice'| 'debuggerd'| 'property_service'| 'service_manager'| 'hwservice_manager'| \
+                    'binder'| 'key'| 'msg'| 'system'| 'security'| 'keystore_key'| 'zygote'| 'kernel_service':
+                    node = IPCNode(teclass)
+                case 'netif'| 'peer'| 'node':
+                    node = IPCNode("socket")
+                case 'filesystem':
+                    node = FileNode()
+                case "cap_userns"| "cap2_userns"| "capability"| "capability2"| "fd":
+                    node = SubjectNode(Cred())
+                case 'process':
+                    node = IPCNode("process_op")
+                case 'bpf':
+                    node = SubjectNode(Cred())
+
+        if node is None:
+            raise ValueError("Unhandled object type %s" % teclass)
+
+        return node
+
+    def get_dataflow_direction(self, edge: AllowEdge) -> Tuple[bool, bool, bool]:
+        # We consider binder:call and *:ioctl to be bi-directional
+
+        # ignore fd:use for now
+        # we ignore getattr as this is not security sensitive enough
+        # ignore DRMservice for now (pread)
+        read_types = [
+            'read', 'ioctl', 'unix_read', 'search',
+            'recv', 'receive', 'recv_msg',  'recvfrom', 'rawip_recv', 'tcp_recv', 'dccp_recv', 'udp_recv',
+            'nlmsg_read', 'nlmsg_readpriv',
+            # Android specific
+            'call', # binder
+            'list', # service_manager
+            'find', # service_manager
+        ]
+
+        # ignore setattr for now. ignore create types
+        write_types = [
+            'write', 'append',
+            #'ioctl',
+            'add_name', 'unix_write', 'enqueue',
+            'send', 'send_msg',  'sendto', 'rawip_send', 'tcp_send', 'dccp_send', 'udp_send',
+            'connectto',
+            'nlmsg_write',
+            # Android specific
+            'call', # binder
+            #'transfer', # binder
+            'set', # property_service
+            'add', # service_manager
+            'find', # service_manager - this is not necessarily a write type,
+                    #but why bother finding a service if you aren't going to send a message to it?
+            'ptrace',
+            'transition',
+        ]
+
+        # management types
+        manage_types = [
+            'create', 'open'
+        ]
+
+        teclass: str = edge["teclass"]
+        perms: List[str] = edge["perms"]
+
+        has_read: bool = False
+        has_write: bool = False
+        has_manage: bool = False
+
+        for perm in perms:
+            if perm in write_types:
+                has_write = True
+            if perm in read_types:
+                has_read = True
+            if perm in manage_types:
+                has_manage = True
+
+        return has_read, has_write, has_manage
+
+
+
     def inflate_graph(self, expand_all_objects: bool = True, skip_fileless_subjects: bool = True):
         """
         Create all possible subjects and objects from the MAC policy and link
@@ -356,26 +454,49 @@ class FileSystemInstance:
         Gt = self.sepol.G_transition
 
         GS = self.sepol.G_dataflow
-        for _, s in self.subjects.items():
+        for s in self.subjects.values():    # add all SubjectNode s
             if skip_fileless_subjects and len(s.backing_files) == 0:
                 continue
             GS.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject'])
 
-        for attr in self.subject_groups:
+        for attr in self.subject_groups:    # add all SubjectGroupNode s
             s = self.subject_groups[attr]
-            # from IPython import embed; embed(); exit(1)
             GS.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject_group'])
 
             for domain in self.expand_attribute(attr):
-                if domain not in self.subjects: #  this cannot happen
-                    raise ValueError("Type member %s of attribute %s not a subject!" % (domain, attr))
+                assert domain in self.subjects
 
                 if skip_fileless_subjects and len(self.subjects[domain].backing_files) == 0:
                     continue
 
                 # add a is-a edge between the subjects as they are effectively the same
                 GS.add_edge(self.subjects[domain].get_node_name(), s.get_node_name())
-
+        
+        for subject_name in list(self.subjects.keys()) + list(self.subject_groups.keys()):
+            subject: SubjectNode = self.subjects[subject_name] if subject_name in self.subjects else self.subject_groups[subject_name]
+            if subject.get_node_name() not in GS:
+                Logger.info("Skipping subject %s as it has no backing files", subject_name)
+                continue
+            for obj_name in G[subject_name]:
+                for edge in G[subject_name][obj_name].values():
+                    # from IPython import embed; embed(); exit(1)
+                    ###### Create object
+                    obj = self.get_object_node(edge)
+                    df_r, df_w, df_m = self.get_dataflow_direction(edge)
+                    obj_type = obj.get_obj_type()
+                    
+                    # mostly ignore subject nodes as the target for other subjects
+                    if obj_type == "subject":
+                        match edge["teclass"]:
+                            case "fd":
+                                continue
+                            case "process":
+                                if subject_name != obj_name and "ptrace" in edge["perms"]:
+                                    # TODO: might be interesting to trace which subjects
+                                    # can ptrace each other
+                                    pass
+                                continue
+                            
     pass
 
 pass

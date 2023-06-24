@@ -1,11 +1,19 @@
 
 from typing import Dict, Set
+from android.capabilities import Capabilities
 from android.dac import Cred
 from android.sepolicy import SELinuxContext
 from fs.filesystempolicy import FilePolicy
 
-
 class GraphNode:
+    def __init__(self):
+        self.backing_files: Dict[str, FilePolicy] = {}
+        '''拥有此type的实际的系统文件'''
+
+    def associate_file(self, file_obj: Dict[str, FilePolicy]):
+        '''set SubjectNode's backing_files'''
+        self.backing_files.update(file_obj)
+
     def get_obj_type(self):
         if isinstance(self, IPCNode):
             obj_type = "ipc"
@@ -23,16 +31,46 @@ class GraphNode:
     def __repr__(self):
         return "<GraphNode[%s]>" % self.get_obj_type()
     
-
 class FileNode(GraphNode):
-    pass
+    def __init__(self):
+        super().__init__()
+        self.uid: int = None
+        self.gid: int = None
+        self.sid: SELinuxContext = None
+        self.cap: Capabilities = Capabilities()
+
+    def get_node_name(self):
+        return "file:%s" % (str(self.sid.type))
+
+    def __repr__(self):
+        return "<FileNode %s>" % self.sid.type
 
 class IPCNode(GraphNode):
-    pass
+    def __init__(self, ipc_type: str):
+        super().__init__()
+        self.sid: SELinuxContext = None
+        self.ipc_type = ipc_type
+
+        # which subject owns this object (used for cred lookup)
+        self.owner = None
+
+    @property
+    def trusted(self):
+        return self.owner.trusted
+
+    @trusted.setter
+    def trusted(self, v):
+        raise ValueError("Cannot set IPC trust: set it on the owning subject")
+
+
+    def get_node_name(self):
+        return "%s:%s" % (self.ipc_type, self.sid.type)
+
+    def __repr__(self):
+        return "<IPCNode %s>" % self.sid.type
 
 class ProcessNode(GraphNode):
     pass
-
 
 class SubjectNode(GraphNode):
     '''记录subject的父子关系'''
@@ -41,9 +79,6 @@ class SubjectNode(GraphNode):
         self.parents : Set[SubjectNode] = set()
         self.children: Set[SubjectNode] = set()
 
-        self.backing_files: Dict[str, FilePolicy] = {}
-        '''拥有此type的实际的系统文件'''
-        
         self.cred: Cred = cred
     
     @property
@@ -53,14 +88,9 @@ class SubjectNode(GraphNode):
     @sid.setter
     def sid(self, v: SELinuxContext):
         self.cred.sid = v
-    
-    def associate_file(self, file_obj: Dict[str, FilePolicy]):
-        '''set SubjectNode's backing_files'''
-        self.backing_files.update(file_obj)
 
     def get_node_name(self) -> str:
         return "subject:%s" % (self.sid.type)
-
 
 pass
 
