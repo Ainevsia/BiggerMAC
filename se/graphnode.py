@@ -112,7 +112,7 @@ class ProcessNode(GraphNode):
         self.pid = pid
 
         self.cred: Cred = cred
-        self.children = set()
+        self.children: Set[Self] = set()
 
     @property
     def sid(self):

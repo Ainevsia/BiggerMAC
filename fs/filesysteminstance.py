@@ -4,11 +4,11 @@ import re
 import networkx as nx
 from typing import Dict, List, Set, Tuple, Union
 from android.dac import Cred
-from android.init import AndroidInit
+from android.init import AndroidInit, AndroidInitService
 from android.sepolicy import SELinuxContext
 from fs.filecontext import AndroidFileContext
 from fs.filesystempolicy import FilePolicy
-from se.graphnode import FileNode, GraphNode, IPCNode, ProcessNode, SubjectNode, IGraphNode
+from se.graphnode import FileNode, GraphNode, IPCNode, ProcessNode, ProcessState, SubjectNode, IGraphNode
 from se.sepolicygraph import Class2, PolicyGraph
 from utils.logger import Logger
 from setools.policyrep import Context, Type
@@ -48,10 +48,10 @@ class FileSystemInstance:
         self.objects: Dict[str, GraphNode] = {}
         '''所有object，使用obj_node_name名进行索引'''
 
-        self.processes = {}
+        self.processes: Dict[str, ProcessNode] = {}
         '''Fully instantiated graph'''
 
-    def instantiate(self):
+    def instantiate(self) -> bool:
         """
         Recreate a running system's state from a combination of MAC and DAC policies.
             * Inflate objects into subjects (processes) if they can be executed
@@ -90,7 +90,11 @@ class FileSystemInstance:
         Logger.debug("Generating a process tree...")
         self.gen_process_tree()
 
-        pass
+        Logger.debug("Simulating process permissions...")
+        if not self.simulate_process_permissions():
+            return False
+
+        return True
 
     def apply_file_contexts(self):
         '''恢复文件系统中的标签'''
@@ -662,7 +666,6 @@ class FileSystemInstance:
         simulation.
         """
         G_allow = self.sepol.G_allow
-        self.processes: Dict[str, ProcessNode] = {}
         # Start from the top of hierarchy
         kernel_subject = self.subjects["kernel"]
         init_subject = self.subjects["init"]
@@ -706,7 +709,85 @@ class FileSystemInstance:
                     if child not in visited or (child.sid.type == "crash_dump" and child_subject.sid.type in ["zygote"]):
                         stack += [(new_process, child)]
 
+    def simulate_process_permissions(self):
+        # Special cases for android
+        kernel = self.processes["kernel_0"]
+        init = self.processes["init_1"]
 
+        ## technically the kernel is a member of all groups, but we dont care for this case
+        kernel.cred.uid = kernel.cred.gid = 0
+        kernel.cred.clear_groups()
+        kernel.cred.cap.grant_all()
+        kernel.state = ProcessState.RUNNING
+        kernel.cred.sid = kernel.subject.sid
+
+        ## init has everything too
+        init.cred.uid = init.cred.gid = 0
+        init.cred.sid = init.subject.sid
+
+        # Android 7.0+ - hidepid=2 introduced
+        if self.init.asp.get_android_version[0] >= 7:
+            init.cred.add_group('readproc')
+        else:
+            init.cred.clear_groups()
+
+        init.cred.cap.grant_all()
+        init.state = ProcessState.RUNNING
+
+        system_server_parent = None
+
+        for init_child in sorted(init.children, key=lambda x: x.pid):
+            init_child.cred = init.cred.execve(new_sid=init_child.subject.sid)
+            # Drop any supplemental groups from init
+            init_child.cred.clear_groups()
+            found_service = None
+
+            for service in self.init.services.values():
+                # (a,_),*_={1:1, 2:2, 3:3}.items()
+                (fn, _), = init_child.exe.items()   # only one element ? otherwise raise exception 
+
+                cmd = self.init.asp.combined_fs.files[service.args[0]].original_path
+                if cmd == fn and not service.oneshot:
+                    if found_service:
+                        continue
+                    found_service = service
+            if not found_service:
+                Logger.warn("Could not find a service definition for process %s", init_child)
+                continue
+            init_child.state = ProcessState.RUNNING
+            service: AndroidInitService = found_service
+            Logger.debug("Got service definition for %s: %s", init_child, service)
+            if service.cred.uid: init_child.cred.uid = service.cred.uid
+            if service.cred.gid: init_child.cred.gid = service.cred.gid
+            if service.cred.groups:
+                for group in service.cred.groups:
+                    init_child.cred.add_group(group)
+
+            if service.cred.sid and init_child.cred.sid != service.cred.sid:
+                Logger.warning("Service definition for %s has different sid (%s)", init_child.sid.type, service.cred.sid)
+            if init_child.cred.uid != 0: init_child.cred.cap.drop_all()
+            if len(service.cred.cap.ambient):
+                Logger.info("Service %s has ambient capabilities %s", init_child.sid.type, service.cred.cap.ambient)
+                init_child.cred.cap.drop_all()
+                init_child.cred.cap.permitted = copy.deepcopy(service.cred.cap.ambient)
+                init_child.cred.cap.effective = copy.deepcopy(service.cred.cap.ambient)
+                init_child.cred.cap.bounding = copy.deepcopy(service.cred.cap.ambient)
+                init_child.cred.cap.inherited = copy.deepcopy(service.cred.cap.ambient)
+                init_child.cred.cap.ambient = copy.deepcopy(service.cred.cap.ambient)
+            args = service.args
+
+            # Zygote special case handling
+            if "app_process" in args[0]:
+                if "--start-system-server" in args:
+                    if system_server_parent is not None:
+                        Logger.error("Found multiple system_server parents!")
+                        continue
+
+                    system_server_parent = init_child
+                    Logger.info("Primary system_server parent: %s", init_child)
+        # Handle the special case of native daemons spawning additional processes (except for zygote)
+        for init_child in sorted(list(init.children), key=lambda x: x.pid):
+            
 
 pass
 

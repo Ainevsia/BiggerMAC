@@ -1,4 +1,4 @@
-from typing import Dict, Set
+from typing import Dict, List, Set
 from android.capabilities import ALL_CAPABILITIES, Capabilities
 from android.sepolicy import SELinuxContext
 from utils import MODULE_PATH
@@ -20,7 +20,7 @@ class Cred():
     def __hash__(self):
         return hash(str(self))
 
-    def execve(self, file_obj=None, new_sid=None):
+    def execve(self, new_sid: SELinuxContext = None):
         import copy
 
         new = Cred()
@@ -54,6 +54,10 @@ class Cred():
             self.groups |= set([AID_MAP_INV[gid]])
         else:
             raise ValueError("Expected type int or str")
+
+    def add_groups(self, gids: List[str]):
+        for gid in gids:
+            self.add_group(self, gid)
 
     def __str__(self):
         additional_info = [

@@ -102,8 +102,8 @@ class AndroidInitService:
         self.cred.gid = 0
 
         
-        self.disabled = False
-        self.oneshot = False
+        self.disabled: bool = False
+        self.oneshot: bool = False
     
     def add_option(self, option: str, args: List[str]):
         if option == "user":
