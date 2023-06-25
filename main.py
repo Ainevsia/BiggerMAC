@@ -17,18 +17,17 @@ import argparse
 if __name__ == "__main__":
     check_root()
     set_working_directory()
-    Logger.debug("main.py")
+
     parser = argparse.ArgumentParser()
-    # parser.add_argument("--policy_name")
     args = parser.parse_args()
-    # ext = ZipExtractor('Huawei_Mate_50_Pro_DCO-LX9_103.0.0.126_C10E10R2P1_Product_Combination_Software_EMUI13.0.0_05019ASD_Dload.zip')
-    ext = ZipExtractor('Huawei_Mate_20.zip')
+    
+    name = 'Huawei_Mate_20'
+    ext = ZipExtractor(f'{name}.zip')
     ext.split_update_app() 
     fs_lst: List[FileSystem] = ext.process_file()
-    Logger.debug(f"fs_lst: {fs_lst}")
     Logger.debug("Extractor done !")
-    # now collect all selinux files from the file system
-    asp: AndroidSecurityPolicy = AndroidSecurityPolicyExtractor(fs_lst, 'Huawei_Mate_20').extract_from_firmware()
+    
+    asp: AndroidSecurityPolicy = AndroidSecurityPolicyExtractor(fs_lst, name).extract_from_firmware()
     major, minor, revision = asp.get_android_version()
     assert major >= 9, "Only Android 9+ is supported"
     file_contexts = read_file_contexts(asp.get_saved_file_path("plat_file_contexts"))
@@ -51,7 +50,6 @@ if __name__ == "__main__":
     graph = SELinuxPolicyGraph(sepolicy)
     pg: PolicyGraph = graph.build_graph()
     Logger.debug("Overlaying policy to filesystems")
-
 
 
     ################################

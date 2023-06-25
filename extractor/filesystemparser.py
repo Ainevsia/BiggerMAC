@@ -59,7 +59,7 @@ class LinuxExt4ImageParser(FilesystemParser):   # make sure the image is ext4
         super().__init__(path)
     
     def parse(self, fs_type: str = 'ext4') -> FileSystem:
-        '''use mount to mount ext4 image'''
+        '''use `mount` COMMAND to mount ext4 image'''
         mount_dir = os.path.join(self.mount_point, os.path.splitext(os.path.basename(self.filepath))[0])
         if not os.path.exists(mount_dir):
             os.makedirs(mount_dir)

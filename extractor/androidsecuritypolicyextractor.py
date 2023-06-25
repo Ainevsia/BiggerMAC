@@ -85,8 +85,14 @@ class AndroidSecurityPolicyExtractor:
     def walk_fs(self, toplevel_path: str) -> FileSystemPolicy:
         fsp = FileSystemPolicy()
         toplevel_components = toplevel_path.split(os.sep)
+        includeroot = True
         for root, dirs, files in os.walk(toplevel_path, onerror=lambda: exit(1), followlinks=False):
-            for obj in dirs + files:
+            if includeroot:
+                includeroot = False
+                objects = ["."] + dirs + files
+            else:
+                objects = dirs + files
+            for obj in objects:
                 path = os.path.normpath(os.path.join(root, obj))
                 path_components = path.split(os.sep)
                 # translate the path to absolute relative to the filesystem image base directory
@@ -97,14 +103,13 @@ class AndroidSecurityPolicyExtractor:
         return fsp
     
     def extract_from_firmware(self) -> AndroidSecurityPolicy:
+        '''now collect all selinux files from the file system'''
         fs_policies: Dict[str, FileSystemPolicy] = {}
         for fs in TARGET_FILESYSTEMS:
-            # TODO: there maybe multiple filesystems that match the pattern
             # eg. erecovery_vendor recovery_vendor vendor are all `vendor` pattern
             match = set(filter(lambda x: fnmatch.fnmatch(x.name, fs["pattern"]), self.fs_lst))
             for _fs in match:
                 fs_policies[_fs.name] = self.walk_fs(_fs.path)
-        
         # Determine how the firmware is organized
         #    a. Boot is loaded and a system partition is mounted
         #    b. Boot loads initially and then transitions to /system as the rootfs
@@ -120,7 +125,7 @@ class AndroidSecurityPolicyExtractor:
         #  3. Single stage boot (treble)
 
         if sepolicy_in_system or treble_enabled:
-            combined_fs: FileSystemPolicy = copy.deepcopy(fs_policies["system"])
+            combined_fs: FileSystemPolicy = copy.deepcopy(fs_policies["system"])    # system as the root fs !
             combined_fs.add_mount_point("/", "rootfs", "rootfs", ["rw"])
             combined_fs.add_mount_point("/system", "ext4", "/dev/block/bootdevice/by-name/system", ["rw"])
         

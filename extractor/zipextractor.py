@@ -68,7 +68,7 @@ class ZipExtractor:
                     extract(os.path.join(dirpath, filename))
 
     def process_file(self) -> List[FileSystem]:
-        '''process files in extracted_path, return file system'''
+        '''process files in extracted_path, mount them return file system'''
         import magic
         if not hasattr(self, 'extracted_path'):
             Logger.error("ZipExtractor: no extracted_path")
@@ -94,7 +94,6 @@ class ZipExtractor:
                 else:
                     pass
                 if isinstance(fs, FileSystem):
-                    # print('+++' + filepath)
                     fs_lst.append(fs)
         return fs_lst
     

@@ -138,6 +138,7 @@ class FileSystemPolicy:
             self.add_file(os.path.join(mount_point, fn), v)
     
     def mkdir(self, path: str, user: int = 0, group: int = 0, perm: int = 0o755):
+        if path in self.files: return
         fp: FilePolicy = FilePolicy.create_pseudo_file(user, group, (perm & 0o7777) | stat.S_IFDIR)
         self.add_or_update_file(path, fp)
         
@@ -160,6 +161,14 @@ class FileSystemPolicy:
         """
         Resolve a path by following symbolic links (if any)
         """
+        # if self.files[path].link_path == "":
+        #     return path
+        # else:
+        #     path = os.path.normpath(path)
+        #     path_components = path.split(os.sep)[1:]
+        #     res = os.path.join('/', *path_components[:-1], self.files[path].link_path)
+        #     return res
+
         path = os.path.normpath(path)
         path_components = path.split(os.sep)[1:]
         total_path = "/"

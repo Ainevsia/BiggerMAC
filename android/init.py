@@ -302,8 +302,10 @@ class AndroidInit:
         self.new_stage_trigger('init')
         self.new_stage_trigger('late-init')
 
+
         # other stages will be handled by internal actions
         self.main_loop()
+        
 
     def read_uevent_rc(self, path: str):
         if path not in self.asp.combined_fs: return
@@ -356,12 +358,12 @@ class AndroidInit:
         if action in self.queue: return # do not double queue actions
         self.queue.append(action)
 
-    def main_loop(self):
+    def main_loop(self, log: bool = False):
         '''Main loop of the init process (executes queued actions) '''
         while len(self.queue):
             action = self.queue.pop(0)
             for cmd in action.commands:
-                self.execute(cmd[0], cmd[1:])
+                self.execute(cmd[0], cmd[1:], log)
     
     def _add_uevent_file(self, path: str, file_policy: FilePolicy):
         if not path.startswith("/dev") and not path.startswith("/sys"): return
@@ -419,9 +421,10 @@ class AndroidInit:
     def _init_rel_path(self, path: str) -> str:
         return self.asp.combined_fs[path]
 
-    def execute(self, cmd: str, args: List[str]):
+    def execute(self, cmd: str, args: List[str], log: bool = False):
         '''Execute a command'''
-        # Logger.debug("Executing command: %s %s", cmd, args)
+        if log:
+            Logger.debug("Executing command: %s %s", cmd, args)
         if cmd == "trigger":
             assert len(args) == 1
             self.new_stage_trigger(args[0]) # trigger a new stage
@@ -526,7 +529,8 @@ class AndroidInit:
                 if entry["path"] in self.asp.combined_fs.mount_points: continue
 
                 self.asp.combined_fs.add_mount_point(entry["path"], entry["fstype"], entry["device"], entry["options"])
-
+        # if self.asp.combined_fs['/system'] is None:
+        #     raise FileNotFoundError("System partition not found")
     def parse_fstab(self, data: str) -> List[Dict[str, str]]:
         entries: List[Dict[str, str]] = []
 

@@ -687,6 +687,7 @@ class FileSystemInstance:
             visited |= set([child_subject])
 
             for fn, fp in child_subject.backing_files.items():  # 对于属于这个type所拥有的所有文件，单独实例化为进程
+                fn = self.init.asp.combined_fs.real_path(fn)
                 new_process = ProcessNode(child_subject, parent_process, {fn : fp}, pid)
                 parent_process.add_child(new_process)
                 proc_id = "%s_%d" % (child_subject.type, pid)
@@ -735,18 +736,15 @@ class FileSystemInstance:
             # (a,_),*_={1:1, 2:2, 3:3}.items()
             (exe_path, _), = init_child.exe.items()   # only one element ? otherwise raise exception 
             for service in self.init.services.values(): # 遍历所有的init service
-                # if service.args[0] == '/system/bin/app_process32' and '/system/bin/app_process32' in init_child.exe:
-                if service.args[0] not in self.init.asp.combined_fs.files:
-                    continue
                 cmd = self.init.asp.combined_fs.real_path(service.args[0])
-                if service.args[0] == exe_path and not service.oneshot:
+                if cmd not in self.init.asp.combined_fs.files:
+                    continue
+                if cmd == exe_path and not service.oneshot:
                     if found_service:
                         continue
                     found_service = service
             if not found_service:
-                print("ainevsia")
-                from IPython import embed; embed(); exit(1)
-                Logger.warn("Could not find a service definition for process %s", init_child)
+                Logger.warn("Not find service definition for %s", init_child)
                 continue
             init_child.state = ProcessState.RUNNING
             service: AndroidInitService = found_service
@@ -884,7 +882,7 @@ class FileSystemInstance:
 
         log.info("STAT: Dataflow created %d subjects and %d objects with a total of %d R/W edges",
                 len(self.subjects), len(self.objects),
-                len(self.sepolicy["graphs"]["dataflow"].edges()))
+                len(self.sepol.G_dataflow.edges()))
         log.info("STAT: Recovered subject %d (%.1f%%) file mappings, but unable to do so for %d subjects",
                  len(subjects_with_backing_files),
                  float(len(subjects_with_backing_files))/len(self.subjects)*100.0,
@@ -932,13 +930,12 @@ class FileSystemInstance:
         fc_prefixes = {}
 
         # get some qualitative data about the file_contexts in relation to the FS
-        for f, perm in self.filesystem.files.items():
-            matches = self.get_file_context_matches(f)
+        for f, perm in self.init.asp.combined_fs.files.items():
+            matches: List[AndroidFileContext] = self.get_file_context_matches(f)
 
-            if len(matches) <= 0:
-                continue
+            if len(matches) <= 0: continue
 
-            ty = perm["selinux"].type
+            ty = perm.selinux.type
             fc_found |= set(matches)
             fc_found_types |= set([ty])
 
@@ -947,7 +944,7 @@ class FileSystemInstance:
 
         for fc in missing:
             # which types are missing
-            fc_missing_types |= set([fc.context.type])
+            fc_missing_types.add(fc.context.type)
             prefix = fc.regex.pattern.split(os.path.sep)[1]
             if prefix not in fc_prefixes:
                 fc_prefixes[prefix] = 1
