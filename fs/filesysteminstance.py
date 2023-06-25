@@ -83,7 +83,8 @@ class FileSystemInstance:
         Logger.debug("Extracting policy capability bounds to subjects...")
         self.extract_selinux_capabilities()
 
-        
+        Logger.debug("Assigning conservative trust flag...")
+
 
         pass
 
@@ -589,7 +590,8 @@ class FileSystemInstance:
                     if edge["teclass"] not in ["capability", "capability2"]:
                         continue
                     if subject_name != obj_name:
-                        raise ValueError("SELinux capability edge <%s> -[%s]-> <%s> is not self-referential" % (subject_name, edge["teclass"], obj_name))
+                        # G_allow['aptouch_daemon']['vendor_logcat_data_file']
+                        Logger.critical("SELinux capability edge <%s> -[%s]-> <%s> is not self-referential" % (subject_name, edge["teclass"], obj_name))
                     for cap in edge["perms"]:
                         subject.cred.cap.add("selinux", cap)
 
