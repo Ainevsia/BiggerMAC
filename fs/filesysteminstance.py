@@ -1,3 +1,4 @@
+import copy
 import re
 import networkx as nx
 from typing import Dict, List, Set, Tuple, Union
@@ -6,7 +7,7 @@ from android.init import AndroidInit
 from android.sepolicy import SELinuxContext
 from fs.filecontext import AndroidFileContext
 from fs.filesystempolicy import FilePolicy
-from se.graphnode import FileNode, GraphNode, IPCNode, SubjectNode
+from se.graphnode import FileNode, GraphNode, IPCNode, SubjectNode, IGraphNode
 from se.sepolicygraph import Class2, PolicyGraph
 from utils.logger import Logger
 from setools.policyrep import Context, Type
@@ -366,7 +367,7 @@ class FileSystemInstance:
                 case "cap" | "cap2":
                     node = SubjectNode(Cred())
         else:
-            match cls:
+            match teclass:
                 case 'drmservice'| 'debuggerd'| 'property_service'| 'service_manager'| 'hwservice_manager'| \
                     'binder'| 'key'| 'msg'| 'system'| 'security'| 'keystore_key'| 'zygote'| 'kernel_service':
                     node = IPCNode(teclass)
@@ -381,7 +382,9 @@ class FileSystemInstance:
                 case 'bpf':
                     node = SubjectNode(Cred())
 
+        
         if node is None:
+            # from IPython import embed; embed(); exit(1)
             raise ValueError("Unhandled object type %s" % teclass)
 
         return node
@@ -450,8 +453,11 @@ class FileSystemInstance:
         Create all possible subjects and objects from the MAC policy and link
         them in a graph based off of dataflow.
         """
-        G = self.sepol.G_allow
+        G_allow = self.sepol.G_allow
         Gt = self.sepol.G_transition
+
+        print("???")
+        from IPython import embed; embed(); exit(1)
 
         GS = self.sepol.G_dataflow
         for s in self.subjects.values():    # add all SubjectNode s
@@ -477,27 +483,104 @@ class FileSystemInstance:
             if subject.get_node_name() not in GS:
                 Logger.info("Skipping subject %s as it has no backing files", subject_name)
                 continue
-            for obj_name in G[subject_name]:
-                for edge in G[subject_name][obj_name].values():
+            for obj_name in G_allow[subject_name]:
+                for edge in G_allow[subject_name][obj_name].values():
                     # from IPython import embed; embed(); exit(1)
                     ###### Create object
-                    obj = self.get_object_node(edge)
+                    obj: GraphNode = self.get_object_node(edge)
                     df_r, df_w, df_m = self.get_dataflow_direction(edge)
                     obj_type = obj.get_obj_type()
                     
                     # mostly ignore subject nodes as the target for other subjects
                     if obj_type == "subject":
                         match edge["teclass"]:
-                            case "fd":
+                            case "fd" | "process" | "bpf" | "capability" | "capability2" | "cap_userns" | "cap2_userns":
                                 continue
-                            case "process":
-                                if subject_name != obj_name and "ptrace" in edge["perms"]:
-                                    # TODO: might be interesting to trace which subjects
-                                    # can ptrace each other
-                                    pass
+                            case _:
+                                raise ValueError("Ignoring MAC edge <%s> -[%s]-> <%s>" % (subject_name, edge["teclass"], obj_name))
+                    domain_name: str = subject.get_node_name()
+
+                    object_expansion: List[str] = self.expand_attribute(obj_name) if expand_all_objects else [obj_name]
+                    
+                    for ty in object_expansion:
+                        new_obj: IGraphNode = copy.deepcopy(obj)
+                        new_obj.sid = SELinuxContext.FromString("u:object_t:%s:s0" % ty)
+                        obj_type = new_obj.get_obj_type()
+                        if obj_type == "ipc":
+                            if ty in self.subjects:
+                                new_obj: IPCNode
+                                new_obj.owner = self.subjects[ty]
+                            else:
+                                if new_obj.ipc_type.endswith("service_manager"):
+                                    found_ipc_owner = False
+                                    for source, target in G_allow.in_edges(self.actualize(new_obj.sid.type)):
+                                        obj_edge: AllowEdge
+                                        for obj_edge in G_allow[source][target].values():
+                                            # find any that have the add permission
+                                            if "add" in obj_edge["perms"]:
+                                                # expand - hal_graphics_allocator_server 9.0
+                                                # XXX: just take the first owner we see...
+                                                source_type = self.expand_attribute(source)[0]
+
+                                                new_obj.owner = self.subjects[source_type]
+
+                                                found_ipc_owner = True
+                                                break
+                                        if found_ipc_owner:
+                                            break
+                                        pass
+                                elif new_obj.ipc_type == "property_service":
+                                    new_obj.owner = self.subjects["init"]
+                            # seriously, there is no point in adding this if there is no owner
+                            # we'd be yelling to no one
+                            if not new_obj.owner:
                                 continue
-                            
+
+                            if len(new_obj.owner.backing_files) == 0 and skip_fileless_subjects:
+                                assert isinstance(new_obj.owner, SubjectNode)
+                                continue
+
+                            assert new_obj.owner.sid is not None
+                        if not df_r and not df_w:   # no read or write, skip
+                            continue
+                        if obj_type == "file":
+                            if ty in self.file_mapping:
+                                print("???")
+                                from IPython import embed; embed(); exit(1)
+                                for fn, fo in self.file_mapping[ty]:
+                                    new_obj.associate_file({ fn : fo })
+                        obj_node_name = new_obj.get_node_name()
+
+                        # objects may be seen more than once, hence they need unique names
+                        self.objects[obj_node_name] = new_obj
+
+                        # create object
+                        GS.add_node(obj_node_name, obj=new_obj, fillcolor=OBJ_COLOR_MAP[obj_type])
+
+                        # We assume there is no way for subjects to talk directly (except shared memory)
+                        # data flow: object -> subject (read)
+                        if df_r and domain_name not in GS[obj_node_name]:
+                            GS.add_edge(obj_node_name, domain_name, ty="read", color='red')
+
+                        # data flow: subject -> object (write)
+                        if df_w or df_m:
+                            if obj_node_name in GS[domain_name]:
+                                edge_types = list(map(lambda x: x[1]['ty'], GS[domain_name][obj_node_name].items()))
+                            else:
+                                edge_types = []
+
+                            if df_w and 'write' not in edge_types:
+                                GS.add_edge(domain_name, obj_node_name, ty="write", color='green')
+
     pass
 
+    def actualize(self, ty: str):
+        """
+        Transforms a type into itself and all its attributes
+        """
+        assert not self.is_attribute(ty)
+        # dereference alias as those nodes dont exist
+        ty = self.sepol.types[ty] if ty in self.sepol.aliases else ty
+        return self.sepol.types[ty] + [ty]
 pass
 

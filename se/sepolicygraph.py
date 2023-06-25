@@ -12,6 +12,7 @@ class Class2:
 class PolicyGraph:
     def __init__(self):
         self.classes: Dict[str, Class2] = {}
+        '''使用class名来索引，Class2中不含有class名'''
 
         self.commons: Dict[str, List[str]] = {}
         '''记录一个common的所有perms'''

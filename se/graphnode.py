@@ -1,9 +1,14 @@
 
-from typing import Dict, Set
+from enum import Enum
+from typing import Dict, Protocol, Set
 from android.capabilities import Capabilities
 from android.dac import Cred
 from android.sepolicy import SELinuxContext
 from fs.filesystempolicy import FilePolicy
+
+class IGraphNode(Protocol):
+    def sid() -> SELinuxContext: ...
+    def get_obj_type(self) -> str: ...
 
 class GraphNode:
     def __init__(self):
@@ -14,7 +19,7 @@ class GraphNode:
         '''set SubjectNode's backing_files'''
         self.backing_files.update(file_obj)
 
-    def get_obj_type(self):
+    def get_obj_type(self) -> str:
         if isinstance(self, IPCNode):
             obj_type = "ipc"
         elif isinstance(self, SubjectNode):
@@ -52,7 +57,7 @@ class IPCNode(GraphNode):
         self.ipc_type = ipc_type
 
         # which subject owns this object (used for cred lookup)
-        self.owner = None
+        self.owner: SubjectNode = None
 
     @property
     def trusted(self):
@@ -69,8 +74,25 @@ class IPCNode(GraphNode):
     def __repr__(self):
         return "<IPCNode %s>" % self.sid.type
 
+class ProcessState(Enum):
+    RUNNING = 1
+    STOPPED = 2
+
 class ProcessNode(GraphNode):
-    pass
+    def __init__(self, subject, parent, exe, pid, cred):
+        # process state
+        self.state = ProcessState.STOPPED
+        self.subject = subject
+        self.parent = parent
+        self.exe = exe
+        self.pid = pid
+
+        self.cred: Cred = cred
+        self.children = set()
+
+    @property
+    def sid(self):
+        return self.cred.sid
 
 class SubjectNode(GraphNode):
     '''记录subject的父子关系'''

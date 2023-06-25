@@ -1,12 +1,12 @@
 import fnmatch
 import os, stat
-from typing import Dict, List, Self
+from typing import Dict, List, Self, Union
 
 from android.sepolicy import SELinuxContext
 from utils.logger import Logger
 
 class FilePolicy:
-    def __init__(self, path: str):
+    def __init__(self, path: str | None):
         # get the information of the symbolic link itself, not its target
         st = os.lstat(path)
 
@@ -16,7 +16,7 @@ class FilePolicy:
         group: int = st[stat.ST_GID]
         size: int = st[stat.ST_SIZE]
     
-        self.original_path = path   # filepath in the host's filesystem
+        self.original_path: Union[str, None] = path   # filepath in the host's filesystem
         self.user = user
         self.group = group
         self.perms = perms
@@ -46,7 +46,9 @@ class FilePolicy:
                 Logger.warn("Unparsed extended attribute key %s", k)
 
     def __repr__(self):
-        return self.original_path
+        if self.original_path is None:
+            return "<FilePolicy pseudo file>"
+        return "<FilePolicy %s>" % self.original_path
 
     @staticmethod
     # 创建一个原系统中不存在的伪文件
