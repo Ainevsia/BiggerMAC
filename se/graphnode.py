@@ -15,6 +15,9 @@ class GraphNode:
         self.backing_files: Dict[str, FilePolicy] = {}
         '''拥有此type的实际的系统文件'''
 
+        self.trusted: bool = False
+        '''是否是一个可信的subject'''
+
     def associate_file(self, file_obj: Dict[str, FilePolicy]):
         '''set SubjectNode's backing_files'''
         self.backing_files.update(file_obj)
@@ -59,13 +62,13 @@ class IPCNode(GraphNode):
         # which subject owns this object (used for cred lookup)
         self.owner: SubjectNode = None
 
-    @property
-    def trusted(self):
-        return self.owner.trusted
+    # @property
+    # def trusted(self):
+    #     return self.owner.trusted
 
-    @trusted.setter
-    def trusted(self, v):
-        raise ValueError("Cannot set IPC trust: set it on the owning subject")
+    # @trusted.setter
+    # def trusted(self, v):
+    #     raise ValueError("Cannot set IPC trust: set it on the owning subject")
 
     def get_node_name(self):
         return "%s:%s" % (self.ipc_type, self.sid.type)
@@ -79,6 +82,7 @@ class ProcessState(Enum):
 
 class ProcessNode(GraphNode):
     def __init__(self, subject, parent, exe, pid, cred):
+        super().__init__()
         # process state
         self.state = ProcessState.STOPPED
         self.subject = subject

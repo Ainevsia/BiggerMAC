@@ -1,4 +1,5 @@
 import copy
+from fnmatch import fnmatch
 import re
 import networkx as nx
 from typing import Dict, List, Set, Tuple, Union
@@ -84,7 +85,7 @@ class FileSystemInstance:
         self.extract_selinux_capabilities()
 
         Logger.debug("Assigning conservative trust flag...")
-
+        self.assign_trust()
 
         pass
 
@@ -595,6 +596,60 @@ class FileSystemInstance:
                     for cap in edge["perms"]:
                         subject.cred.cap.add("selinux", cap)
 
+    def assign_trust(self):
+        for name, subject in self.subjects.items():
+            trusted: bool = False
+            reason: str = ""
+
+            ty: str = subject.sid.type
+
+            if ty in ['init', 'vold', 'ueventd', 'kernel', 'system_server']:
+                trusted = True
+                # https://source.android.com/security/overview/updates-resources#triaging_bugs
+                reason = "in Android's TCB"
+            if trusted:
+                subject.trusted = True
+                Logger.debug("Subject %s is trusted (reason: %s)", name, reason)
+
+        for name, obj in self.objects.items():
+            trusted = False
+            reason = ""
+
+            for fn in obj.backing_files:
+                for magic in ['/sys/', '/dev/']:
+                    if fn.startswith(magic):
+                        trusted = True
+                        reason = "backing file %s starts with %s" % (fn, magic)
+                        break
+            
+            # revoke trust from some externally controlled sources
+            for fn, fo in obj.backing_files.items():
+                if not hasattr(fo, "tags"):
+                    fo.tags = set()
+                if fn.startswith('/dev/'):
+                    for pattern in ["*usb*", "*GS*", "*serial*"]:
+                        if fnmatch(fn, pattern) or fnmatch(obj.sid.type, pattern):
+                            fo.tags |= set(['usb'])
+                            break
+
+                    for pattern in ["*bt_*", "*bluetooth*", "*hci*"]:
+                        if fnmatch(fn, pattern) or fnmatch(obj.sid.type, pattern):
+                            fo.tags |= set(['bluetooth'])
+                            break
+
+                    for pattern in ["*nfc*"]:
+                        if fnmatch(fn, pattern) or fnmatch(obj.sid.type, pattern):
+                            fo.tags |= set(['nfc'])
+                            break
+
+                    for pattern in ["*at_*", "*atd*", "*modem*", "*mdm*", "*smd*"]:
+                        if fnmatch(fn, pattern) or fnmatch(obj.sid.type, pattern):
+                            fo.tags |= set(['modem'])
+                            break
+            
+            if trusted:
+                obj.trusted = True
+                Logger.debug("Object %s is trusted (reason: %s)", name, reason)
 
 pass
 
