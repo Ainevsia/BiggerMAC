@@ -726,7 +726,7 @@ class FileSystemInstance:
         init.cred.sid = init.subject.sid
 
         # Android 7.0+ - hidepid=2 introduced
-        if self.init.asp.get_android_version[0] >= 7:
+        if self.init.asp.get_android_version()[0] >= 7:
             init.cred.add_group('readproc')
         else:
             init.cred.clear_groups()
@@ -746,6 +746,8 @@ class FileSystemInstance:
                 # (a,_),*_={1:1, 2:2, 3:3}.items()
                 (fn, _), = init_child.exe.items()   # only one element ? otherwise raise exception 
 
+                if service.args[0] not in self.init.asp.combined_fs.files:
+                    continue
                 cmd = self.init.asp.combined_fs.files[service.args[0]].original_path
                 if cmd == fn and not service.oneshot:
                     if found_service:
@@ -787,7 +789,90 @@ class FileSystemInstance:
                     Logger.info("Primary system_server parent: %s", init_child)
         # Handle the special case of native daemons spawning additional processes (except for zygote)
         for init_child in sorted(list(init.children), key=lambda x: x.pid):
-            
+            if init_child.state == ProcessState.STOPPED and "zygote" not in init_child.subject.sid.type:
+                for possible_parent in list(init.children):
+                    if possible_parent.state == ProcessState.RUNNING:
+                        if possible_parent.subject == init_child.subject:
+                            Logger.warn("Reparenting %s -> %s", init_child, possible_parent)
 
+                            possible_parent.children |= set([init_child])
+                            init.children -= set([init_child])
+                            init_child.parent = possible_parent
+
+                            # refork from the new parent creds
+                            init_child.cred = possible_parent.cred.execve()
+                            init_child.state = ProcessState.RUNNING
+                            break
+        if not system_server_parent:
+            Logger.error("Failed to identify the system_server parent")
+            return False
+        
+        zygotes = sorted(list(filter(lambda x: "zygote" in x.subject.sid.type, init.children)), key=lambda x: x.pid)
+
+        # remove children from all zygotes with differing executables
+        for zyg in zygotes:
+            (z_fn, _), = zyg.exe.items()
+            if system_server_parent != zyg:
+                zyg.children = set(filter(lambda x: x.subject.sid.type != "system_server", zyg.children))
+                Logger.info("Dropping system_server from %s", zyg)
+            for child in list(zyg.children):
+                (fn, _), = child.exe.items()
+
+                if fn != z_fn and "crash" not in fn:
+                    zyg.children -= set([child])
+        # spawn an untrusted app
+        if len(zygotes) > 0:
+            app_parent = zygotes[0]
+            untrusted_apps = list(filter(lambda x: "untrusted_app" in x.subject.sid.type, app_parent.children))
+            crash_dump = list(filter(lambda x: "crash_dump" in x.subject.sid.type, app_parent.children))
+            app_id = 0
+
+            for crashes in sorted(crash_dump, key=lambda x: x.subject.sid.type):
+                crashes.cred = app_parent.cred.execve(new_sid=crashes.subject.sid)
+                crashes.state = ProcessState.RUNNING
+                Logger.info("Spawned crash_dump %s from %s", repr(crashes), repr(app_parent))
+
+            for primary_app in sorted(untrusted_apps, key=lambda x: x.subject.sid.type):
+                primary_app.cred = app_parent.cred.execve(new_sid=primary_app.subject.sid)
+                # Drop any supplemental groups from init
+                primary_app.cred.clear_groups()
+                primary_app.cred.cap.drop_all()
+
+                primary_app.cred.uid = 10000+app_id
+                primary_app.cred.gid = 10000+app_id
+                primary_app.cred.add_group('inet')
+                primary_app.cred.add_group('everybody')
+                primary_app.cred.add_group(50000+app_id)
+                primary_app.state = ProcessState.RUNNING
+                Logger.info("Spawned untrusted_app %s from %s", repr(primary_app), repr(app_parent))
+                app_id += 1
+        else:
+            Logger.error("No zygotes! This is bad")
+            return False
+        system_server = list(filter(lambda x: x.subject.sid.type == "system_server", system_server_parent.children))
+        if len(system_server) == 0:
+            Logger.error("Issue spawning system_server")
+            return False
+        else:
+            system_server = system_server[0]
+        ## system_server
+        # See system server permissions: http://androidxref.com/8.1.0_r33/xref/frameworks/base/core/java/com/android/internal/os/ZygoteInit.java#646
+        system_server.cred.uid = 1000
+        system_server.cred.gid = 1000
+        system_server.cred.sid = system_server.subject.sid
+
+        system_server.cred.cap.bound_none()
+
+        for cap in ['CAP_IPC_LOCK', 'CAP_KILL', 'CAP_NET_ADMIN', 'CAP_NET_BIND_SERVICE', 'CAP_NET_BROADCAST', 'CAP_NET_RAW',
+                'CAP_SYS_MODULE', 'CAP_SYS_NICE', 'CAP_SYS_PTRACE', 'CAP_SYS_TIME', 'CAP_SYS_TTY_CONFIG', 'CAP_WAKE_ALARM']:
+            system_server.cred.cap.add('inherited', cap)
+            system_server.cred.cap.add('effective', cap)
+            system_server.cred.cap.add('permitted', cap)
+        for group in [1001,1002,1003,1004,1005,1006,1007,1008,1009,1010,1018,1021,1023,1032,3001,3002,3003,3006,3007,3009,3010]:
+            system_server.cred.add_group(group)
+
+        system_server.state = ProcessState.RUNNING
+
+        return True
 pass
 
