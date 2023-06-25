@@ -667,7 +667,6 @@ class FileSystemInstance:
         process. Whether or not the process is actually running will be decided during boot
         simulation.
         """
-        G_allow = self.sepol.G_allow
         # Start from the top of hierarchy
         kernel_subject = self.subjects["kernel"]
         init_subject = self.subjects["init"]
@@ -681,34 +680,24 @@ class FileSystemInstance:
 
         ### Propagate subject permissions by simulating fork/exec
         # Depth-first traversal
-
         pid = 1
 
-        while len(stack):
+        while len(stack):   # child_subject 为当前遍历的parent
             parent_process, child_subject = stack.pop()
             visited |= set([child_subject])
 
-            for fn, fp in child_subject.backing_files.items():
-                # fc = fp.selinux
-                # exec_rule_parent = None
-                # exec_rule_child = None
-                # if fc.type in G_allow[parent_process.subject.sid.type]:
-                #     exec_rule_parent = "execute_no_trans" in G_allow[parent_process.subject.sid.type][fc.type][0]["perms"]
-                # if fc.type in G_allow[child_subject.sid.type]:
-                #     exec_rule_child = "execute_no_trans" in G_allow[child_subject.sid.type][fc.type][0]["perms"]
-
-                # Conservatively assume the parent
+            for fn, fp in child_subject.backing_files.items():  # 对于属于这个type所拥有的所有文件，单独实例化为进程
                 new_process = ProcessNode(child_subject, parent_process, {fn : fp}, pid)
-                parent_process.children |= set([new_process])
-                proc_id = "%s_%d" % (child_subject.sid.type, pid)
+                parent_process.add_child(new_process)
+                proc_id = "%s_%d" % (child_subject.type, pid)
                 
                 assert proc_id not in self.processes
                 self.processes[proc_id] = new_process
 
                 pid += 1
 
-                for child in sorted(child_subject.children, key=lambda x: str(x.sid.type)):
-                    if child not in visited or (child.sid.type == "crash_dump" and child_subject.sid.type in ["zygote"]):
+                for child in sorted(child_subject.children, key=lambda x: str(x.type)):
+                    if child not in visited or (child.type == "crash_dump" and child_subject.type in ["zygote"]):
                         stack += [(new_process, child)]
 
     def simulate_process_permissions(self):
@@ -747,16 +736,15 @@ class FileSystemInstance:
             (exe_path, _), = init_child.exe.items()   # only one element ? otherwise raise exception 
             for service in self.init.services.values(): # 遍历所有的init service
                 # if service.args[0] == '/system/bin/app_process32' and '/system/bin/app_process32' in init_child.exe:
-                #     print("EEEEE")
-                #     from IPython import embed; embed(); exit(1)
                 if service.args[0] not in self.init.asp.combined_fs.files:
                     continue
-                # cmd = self.init.asp.combined_fs.real_path(service.args[0])
+                cmd = self.init.asp.combined_fs.real_path(service.args[0])
                 if service.args[0] == exe_path and not service.oneshot:
                     if found_service:
                         continue
                     found_service = service
             if not found_service:
+                print("ainevsia")
                 from IPython import embed; embed(); exit(1)
                 Logger.warn("Could not find a service definition for process %s", init_child)
                 continue

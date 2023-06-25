@@ -111,6 +111,6 @@ class AndroidBootingParser(FilesystemParser):
         else:
             print(filetype)
             Logger.error(f"AndroidBootingParse: unknown filetype: {ramdisk_file_path} --> {filetype}")
-            exit(1)
+            raise Exception(f"AndroidBootingParse: unknown filetype: {ramdisk_file_path} --> {filetype}")
         shutil.rmtree(os.path.join(self.booting_extraced, f'{self.filename}-extracted'))
         return FileSystem(ramdisk_out_path, self.filename)

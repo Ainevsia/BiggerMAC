@@ -163,8 +163,6 @@ class AndroidInit:
                         ro_hardware_guess = match.group(1)
                         self.asp.properties[rohw] = ro_hardware_guess
                         Logger.info(f"Guessing ro.hardware as {ro_hardware_guess}")
-                        # print("[!] " + pattern + ro_hardware_guess + str(results))
-                        # exit(1)
                         break
         if ro_hardware_guess:
             Logger.info(f"Guessing ro.hardware as {ro_hardware_guess}")

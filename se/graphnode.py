@@ -78,14 +78,17 @@ class IPCNode(GraphNode):
         return "<IPCNode %s>" % self.sid.type
 
 class SubjectNode(GraphNode):
-    '''记录subject的父子关系'''
+    '''一个subject是一个具体的type，以及对应的文件系统中的文件'''
     def __init__(self, cred: Cred):
         super().__init__()
         self.parents : Set[SubjectNode] = set()
         self.children: Set[SubjectNode] = set()
-
         self.cred: Cred = cred
     
+    @property
+    def type(self) -> str:
+        return self.cred.sid.type
+
     @property
     def sid(self) -> SELinuxContext:
         return self.cred.sid
@@ -121,6 +124,9 @@ class ProcessNode(GraphNode):
     def __repr__(self):
         parent_type = self.parent.subject.sid.type if self.parent else "god"
         return "<ProcessNode %s->%s %s %s>" % (parent_type, self.subject.sid.type, list(self.exe.keys())[0], self.cred)
+
+    def add_child(self, child: Self):
+        self.children.add(child)
 
 pass
 

@@ -42,10 +42,10 @@ class Cred():
 
         return new
 
-    def add_group(self, gid: str):
+    def add_group(self, gid: int | str):
         if isinstance(gid, int):
-            raise ValueError("Expected type str")
-            # self.groups |= set([gid])
+            # raise ValueError("Expected type str")
+            self.groups |= set([gid])
         elif isinstance(gid, str):
             self.groups |= set([AID_MAP_INV[gid]])
         else:
