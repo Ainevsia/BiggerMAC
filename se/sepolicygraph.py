@@ -37,7 +37,7 @@ class PolicyGraph:
         self.G_transition: nx.MultiDiGraph = nx.MultiDiGraph()
         '''teclass through name'''
         self.G_dataflow: nx.MultiDiGraph = nx.MultiDiGraph()
-        '''dataflow graph'''
+        '''dataflow graph 包含了主体以及对象'''
 
 class SELinuxPolicyGraph(setools.SELinuxPolicy):
     def build_graph(self) -> PolicyGraph:

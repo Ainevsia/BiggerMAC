@@ -49,8 +49,8 @@ class Capabilities():
         else:
             self._add_cap(cap, name_mapping[set_name])
 
-    def selinux(self, cap):
-        self._add_cap(cap, self.selinux)
+    # def selinux(self, cap):
+    #     self._add_cap(cap, self.selinux)
 
     def _add_cap(self, cap: str, capset: Set[int]):
         '''Add a capability to a capset'''

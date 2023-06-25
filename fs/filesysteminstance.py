@@ -80,6 +80,11 @@ class FileSystemInstance:
         Logger.debug("Inflating subject dataflow graph...")
         self.inflate_graph()
 
+        Logger.debug("Extracting policy capability bounds to subjects...")
+        self.extract_selinux_capabilities()
+
+        
+
         pass
 
     def apply_file_contexts(self):
@@ -245,7 +250,6 @@ class FileSystemInstance:
             # associate a SID (ty) with a file (f) and its (perm)issions
             self.file_mapping[ty][file] = self.init.asp.combined_fs.files[file]
 
-    # This proc is simplified to make clear
     def recover_subject_hierarchy(self):
         '''遍历type_transition allow rule, 为每个subject设置find_associated_files'''
         G_allow = self.sepol.G_allow
@@ -446,8 +450,6 @@ class FileSystemInstance:
 
         return has_read, has_write, has_manage
 
-
-
     def inflate_graph(self, expand_all_objects: bool = True, skip_fileless_subjects: bool = True):
         """
         Create all possible subjects and objects from the MAC policy and link
@@ -456,15 +458,15 @@ class FileSystemInstance:
         G_allow = self.sepol.G_allow
         Gt = self.sepol.G_transition
 
-        GS = self.sepol.G_dataflow
+        G_dataflow = self.sepol.G_dataflow
         for s in self.subjects.values():    # add all SubjectNode s
             if skip_fileless_subjects and len(s.backing_files) == 0:
                 continue
-            GS.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject'])
+            G_dataflow.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject'])
 
         for attr in self.subject_groups:    # add all SubjectGroupNode s
             s = self.subject_groups[attr]
-            GS.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject_group'])
+            G_dataflow.add_node(s.get_node_name(), obj=s, fillcolor=OBJ_COLOR_MAP['subject_group'])
 
             for domain in self.expand_attribute(attr):
                 assert domain in self.subjects
@@ -473,11 +475,11 @@ class FileSystemInstance:
                     continue
 
                 # add a is-a edge between the subjects as they are effectively the same
-                GS.add_edge(self.subjects[domain].get_node_name(), s.get_node_name())
+                G_dataflow.add_edge(self.subjects[domain].get_node_name(), s.get_node_name())
         
         for subject_name in list(self.subjects.keys()) + list(self.subject_groups.keys()):
             subject: SubjectNode = self.subjects[subject_name] if subject_name in self.subjects else self.subject_groups[subject_name]
-            if subject.get_node_name() not in GS:
+            if subject.get_node_name() not in G_dataflow:
                 Logger.info("Skipping subject %s as it has no backing files", subject_name)
                 continue
             for obj_name in G_allow[subject_name]:
@@ -549,25 +551,25 @@ class FileSystemInstance:
                         self.objects[obj_node_name] = new_obj
 
                         # create object
-                        GS.add_node(obj_node_name, obj=new_obj, fillcolor=OBJ_COLOR_MAP[obj_type])
+                        G_dataflow.add_node(obj_node_name, obj=new_obj, fillcolor=OBJ_COLOR_MAP[obj_type])
 
                         # We assume there is no way for subjects to talk directly (except shared memory)
                         # data flow: object -> subject (read)
-                        if df_r and domain_name not in GS[obj_node_name]:
-                            GS.add_edge(obj_node_name, domain_name, ty="read", color='red')
+                        if df_r and domain_name not in G_dataflow[obj_node_name]:
+                            G_dataflow.add_edge(obj_node_name, domain_name, ty="read", color='red')
 
                         # data flow: subject -> object (write)
                         if df_w or df_m:
-                            if obj_node_name in GS[domain_name]:
-                                edge_types = list(map(lambda x: x[1]['ty'], GS[domain_name][obj_node_name].items()))
+                            if obj_node_name in G_dataflow[domain_name]:
+                                # {'ty': 'write', 'color': 'green'}
+                                edge_types = list(map(lambda x: x['ty'], G_dataflow[domain_name][obj_node_name].values()))
                             else:
                                 edge_types = []
 
                             if df_w and 'write' not in edge_types:
-                                GS.add_edge(domain_name, obj_node_name, ty="write", color='green')
-
-    pass
-
+                                G_dataflow.add_edge(domain_name, obj_node_name, ty="write", color='green')
+        return
+    
     def actualize(self, ty: str):
         """
         Transforms a type into itself and all its attributes
@@ -576,5 +578,21 @@ class FileSystemInstance:
         # dereference alias as those nodes dont exist
         ty = self.sepol.types[ty] if ty in self.sepol.aliases else ty
         return self.sepol.types[ty] + [ty]
+
+    def extract_selinux_capabilities(self):
+        '''add selinux capabilities to subjects'''
+        G_allow = self.sepol.G_allow
+        for subject_name, subject in self.subjects.items():
+            for obj_name in G_allow[subject_name]:
+                for edge in G_allow[subject_name][obj_name].values():
+                    edge: AllowEdge
+                    if edge["teclass"] not in ["capability", "capability2"]:
+                        continue
+                    if subject_name != obj_name:
+                        raise ValueError("SELinux capability edge <%s> -[%s]-> <%s> is not self-referential" % (subject_name, edge["teclass"], obj_name))
+                    for cap in edge["perms"]:
+                        subject.cred.cap.add("selinux", cap)
+
+
 pass
 
