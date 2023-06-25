@@ -44,8 +44,8 @@ class FileSystemInstance:
         self.domain_attributes: List[str] = []
         '''所有process所可能拥有的 attribute'''
 
-        self.objects = {}
-        ''' 111 111'''
+        self.objects: Dict[str, GraphNode] = {}
+        '''所有object，使用obj_node_name名进行索引'''
 
         self.processes = {}
         '''Fully instantiated graph'''
@@ -456,9 +456,6 @@ class FileSystemInstance:
         G_allow = self.sepol.G_allow
         Gt = self.sepol.G_transition
 
-        print("???")
-        from IPython import embed; embed(); exit(1)
-
         GS = self.sepol.G_dataflow
         for s in self.subjects.values():    # add all SubjectNode s
             if skip_fileless_subjects and len(s.backing_files) == 0:
@@ -545,10 +542,7 @@ class FileSystemInstance:
                             continue
                         if obj_type == "file":
                             if ty in self.file_mapping:
-                                print("???")
-                                from IPython import embed; embed(); exit(1)
-                                for fn, fo in self.file_mapping[ty]:
-                                    new_obj.associate_file({ fn : fo })
+                                new_obj.associate_file(self.file_mapping[ty])
                         obj_node_name = new_obj.get_node_name()
 
                         # objects may be seen more than once, hence they need unique names

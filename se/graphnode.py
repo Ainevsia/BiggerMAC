@@ -67,7 +67,6 @@ class IPCNode(GraphNode):
     def trusted(self, v):
         raise ValueError("Cannot set IPC trust: set it on the owning subject")
 
-
     def get_node_name(self):
         return "%s:%s" % (self.ipc_type, self.sid.type)
 
