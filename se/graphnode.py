@@ -117,5 +117,10 @@ class ProcessNode(GraphNode):
     @property
     def sid(self):
         return self.cred.sid
+    
+    def __repr__(self):
+        parent_type = self.parent.subject.sid.type if self.parent else "god"
+        return "<ProcessNode %s->%s %s %s>" % (parent_type, self.subject.sid.type, list(self.exe.keys())[0], self.cred)
+
 pass
 

@@ -4,9 +4,9 @@ from android.sepolicy import SELinuxContext
 from utils import MODULE_PATH
 
 class Cred():
-    def __init__(self):
-        self.uid = None
-        self.gid = None
+    def __init__(self, uid = None, gid = None):
+        self.uid = uid
+        self.gid = gid
         self.groups: Set[int] = set()
         self.sid: SELinuxContext = None
         self.cap = Capabilities()
@@ -21,15 +21,13 @@ class Cred():
         return hash(str(self))
 
     def execve(self, new_sid: SELinuxContext = None):
+        '''return new SELinuxContext after execve of the current process'''
         import copy
 
-        new = Cred()
-        new.uid = self.uid
-        new.gid = self.gid
+        new = Cred(self.uid, self.gid)
         new.groups = copy.deepcopy(self.groups)
 
-        if new_sid:
-            assert isinstance(new_sid, SELinuxContext)
+        if isinstance(new_sid, SELinuxContext):
             new.sid = copy.deepcopy(new_sid)
         else:
             new.sid = copy.deepcopy(self.sid)
@@ -39,9 +37,7 @@ class Cred():
         # TODO: file system capabilities /vendor/bin/pm-service
 
         # Drop by default, when transitioning to a non-privileged process
-        if new.uid != 0:
-            new.cap = Capabilities()
-        else:
+        if new.uid == 0:
             new.cap = copy.deepcopy(self.cap)
 
         return new

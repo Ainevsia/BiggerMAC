@@ -155,3 +155,33 @@ class FileSystemPolicy:
         if path not in self.files: return
         fp: FilePolicy = self.files[path]
         fp.perms = (fp.perms & ~0o7777) | (perm & 0o7777)
+
+    def real_path(self, path: str) -> str:
+        """
+        Resolve a path by following symbolic links (if any)
+        """
+        path = os.path.normpath(path)
+        path_components = path.split(os.sep)[1:]
+        total_path = "/"
+
+        for component in path_components:
+            tpath = os.path.join(total_path, component)
+
+            if tpath in self.files:
+                fo = self.files[tpath]
+                # got a symbolic link
+                if fo.link_path != "":
+                    link = fo.link_path
+                    link = os.path.normpath(link)
+                    # TODO: this only works for one layer
+                    if os.path.isabs(link):
+                        total_path = link
+                    else:
+                        total_path = os.path.join(total_path, link)
+                else:
+                    total_path = tpath
+            else:
+                total_path = tpath
+                break
+
+        return total_path

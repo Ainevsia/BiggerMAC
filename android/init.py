@@ -184,7 +184,9 @@ class AndroidInit:
     def read_init_rc(self, path: str):
         '''Reads the init.rc file and returns a list of sections'''
         if path not in self.asp.combined_fs:
-            raise FileNotFoundError(f"init.rc file not found at {path}")
+            Logger.error(f"init.rc file not found at {path}")
+            return
+            # raise FileNotFoundError(f"init.rc file not found at {path}")
         rc_path = self.asp.combined_fs[path]
 
         with open(rc_path, 'r') as fp:
@@ -249,8 +251,7 @@ class AndroidInit:
                 raise ValueError("Unknown section type %s" % (action))
         
         for imp in pending_imports:
-            # self._import(imp)
-            pass
+            self._import(imp)
 
     def _add_service(self, name: str, args: List[str], body: Section):
         # TODO: handle override
@@ -551,4 +552,6 @@ class AndroidInit:
 
         return entries
 
+    def _import(self, path: str):
+        self.read_init_rc(self.expand_properties(path))
 

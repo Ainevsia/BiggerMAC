@@ -1,5 +1,6 @@
 import copy
 from fnmatch import fnmatch
+import os
 import re
 import networkx as nx
 from typing import Dict, List, Set, Tuple, Union
@@ -93,7 +94,10 @@ class FileSystemInstance:
         Logger.debug("Simulating process permissions...")
         if not self.simulate_process_permissions():
             return False
+        
+        self.stats()
 
+        Logger.info("Finished instantiating SEPolicy")
         return True
 
     def apply_file_contexts(self):
@@ -346,7 +350,7 @@ class FileSystemInstance:
         no_backing_file_transitions = set(list(self.subjects)) - has_backing_file_transition
         # exclude the obvious app domain
         no_backing_file_transitions -= set(self.expand_attribute('appdomain'))
-        # from IPython import embed; embed(); exit(1)
+
         # Okay, we have a list of domains that were clearly from dyntransitions
         # We have no mapping from them to their executable. Perform a last ditch search
         for domain in no_backing_file_transitions:
@@ -397,7 +401,6 @@ class FileSystemInstance:
 
         
         if node is None:
-            # from IPython import embed; embed(); exit(1)
             raise ValueError("Unhandled object type %s" % teclass)
 
         return node
@@ -493,7 +496,6 @@ class FileSystemInstance:
                 continue
             for obj_name in G_allow[subject_name]:
                 for edge in G_allow[subject_name][obj_name].values():
-                    # from IPython import embed; embed(); exit(1)
                     ###### Create object
                     obj: GraphNode = self.get_object_node(edge)
                     df_r, df_w, df_m = self.get_dataflow_direction(edge)
@@ -712,7 +714,7 @@ class FileSystemInstance:
     def simulate_process_permissions(self):
         # Special cases for android
         kernel = self.processes["kernel_0"]
-        init = self.processes["init_1"]
+        init = self.processes["init_1"] # init 进程
 
         ## technically the kernel is a member of all groups, but we dont care for this case
         kernel.cred.uid = kernel.cred.gid = 0
@@ -736,24 +738,26 @@ class FileSystemInstance:
 
         system_server_parent = None
 
-        for init_child in sorted(init.children, key=lambda x: x.pid):
-            init_child.cred = init.cred.execve(new_sid=init_child.subject.sid)
-            # Drop any supplemental groups from init
-            init_child.cred.clear_groups()
+        for init_child in sorted(init.children, key=lambda x: x.pid):   # for each init child process
+            init_child.cred = init.cred.execve(init_child.subject.sid)
+            init_child.cred.clear_groups()  # Drop any supplemental groups from init
+            
             found_service = None
-
-            for service in self.init.services.values():
-                # (a,_),*_={1:1, 2:2, 3:3}.items()
-                (fn, _), = init_child.exe.items()   # only one element ? otherwise raise exception 
-
+            # (a,_),*_={1:1, 2:2, 3:3}.items()
+            (exe_path, _), = init_child.exe.items()   # only one element ? otherwise raise exception 
+            for service in self.init.services.values(): # 遍历所有的init service
+                # if service.args[0] == '/system/bin/app_process32' and '/system/bin/app_process32' in init_child.exe:
+                #     print("EEEEE")
+                #     from IPython import embed; embed(); exit(1)
                 if service.args[0] not in self.init.asp.combined_fs.files:
                     continue
-                cmd = self.init.asp.combined_fs.files[service.args[0]].original_path
-                if cmd == fn and not service.oneshot:
+                # cmd = self.init.asp.combined_fs.real_path(service.args[0])
+                if service.args[0] == exe_path and not service.oneshot:
                     if found_service:
                         continue
                     found_service = service
             if not found_service:
+                from IPython import embed; embed(); exit(1)
                 Logger.warn("Could not find a service definition for process %s", init_child)
                 continue
             init_child.state = ProcessState.RUNNING
@@ -804,6 +808,7 @@ class FileSystemInstance:
                             init_child.state = ProcessState.RUNNING
                             break
         if not system_server_parent:
+            from IPython import embed; embed(); exit(1)
             Logger.error("Failed to identify the system_server parent")
             return False
         
@@ -816,9 +821,9 @@ class FileSystemInstance:
                 zyg.children = set(filter(lambda x: x.subject.sid.type != "system_server", zyg.children))
                 Logger.info("Dropping system_server from %s", zyg)
             for child in list(zyg.children):
-                (fn, _), = child.exe.items()
+                (exe_path, _), = child.exe.items()
 
-                if fn != z_fn and "crash" not in fn:
+                if exe_path != z_fn and "crash" not in exe_path:
                     zyg.children -= set([child])
         # spawn an untrusted app
         if len(zygotes) > 0:
@@ -874,5 +879,106 @@ class FileSystemInstance:
         system_server.state = ProcessState.RUNNING
 
         return True
+
+    def stats(self):
+        log = Logger
+        log.info("------- STATS --------")
+        log.info("---[File Contexts Report]---")
+        self.file_contexts_report()
+
+        ############################
+
+        log.info("---[Subject Backing File Report]---")
+        subjects_without_backing_files = list(filter(lambda x: len(x[1].backing_files) == 0, self.subjects.items()))
+        subjects_with_backing_files = list(filter(lambda x: len(x[1].backing_files) > 0, self.subjects.items()))
+        objects_without_backing_files = list(filter(lambda x: len(x[1].backing_files) == 0, self.objects.items()))
+        objects_with_backing_files = list(filter(lambda x: len(x[1].backing_files) > 0, self.objects.items()))
+
+        log.info("STAT: Dataflow created %d subjects and %d objects with a total of %d R/W edges",
+                len(self.subjects), len(self.objects),
+                len(self.sepolicy["graphs"]["dataflow"].edges()))
+        log.info("STAT: Recovered subject %d (%.1f%%) file mappings, but unable to do so for %d subjects",
+                 len(subjects_with_backing_files),
+                 float(len(subjects_with_backing_files))/len(self.subjects)*100.0,
+                 len(subjects_without_backing_files))
+        log.info("STAT: Recovered object %d (%.1f%%) file mappings, but unable to do so for %d objects",
+                 len(objects_with_backing_files),
+                 float(len(objects_without_backing_files))/len(self.objects)*100.0,
+                 len(objects_without_backing_files))
+
+        ############################
+
+        log.info("---[IPC REPORT]---")
+
+        # IPC Missing owner report
+        missing_owner = set()
+        got_owner = set()
+        missing_ipc_types = {}
+        ipc_type_cnt = {}
+
+        for on, o in self.objects.items():
+            if isinstance(o, IPCNode):
+                ipc_type_cnt[o.ipc_type] = ipc_type_cnt.get(o.ipc_type, 0) + 1
+
+                if not o.owner:
+                    missing_owner |= set([o])
+                    missing_ipc_types[o.ipc_type] = missing_ipc_types.get(o.ipc_type, 0) + 1
+                else:
+                    got_owner |= set([o])
+
+        log.info("IPC Freq:")
+        for ty, freq in sorted(ipc_type_cnt.items(), key=lambda x: x[1], reverse=True):
+            log.info("%s - %d (%.1f%%)", ty, freq, freq/(len(got_owner)+len(missing_owner))*100.0)
+
+        log.info("%d/%d (%.2f%%) IPCNodes are missing their owners!",
+                len(missing_owner), len(got_owner), float(len(missing_owner)) / len(got_owner) * 100.0)
+        for ty, freq in sorted(missing_ipc_types.items()):
+            log.info("IPC type '%s' missing %d owners", ty, freq)
+
+        log.info("------- END STATS --------")
+
+    def file_contexts_report(self):
+        fc_found = set()
+        fc_found_types = set()
+        fc_missing_types = set()
+        fc_prefixes = {}
+
+        # get some qualitative data about the file_contexts in relation to the FS
+        for f, perm in self.filesystem.files.items():
+            matches = self.get_file_context_matches(f)
+
+            if len(matches) <= 0:
+                continue
+
+            ty = perm["selinux"].type
+            fc_found |= set(matches)
+            fc_found_types |= set([ty])
+
+        # figure out which file contexts are missing from the file system
+        missing = set(self.file_contexts) - fc_found
+
+        for fc in missing:
+            # which types are missing
+            fc_missing_types |= set([fc.context.type])
+            prefix = fc.regex.pattern.split(os.path.sep)[1]
+            if prefix not in fc_prefixes:
+                fc_prefixes[prefix] = 1
+            else:
+                fc_prefixes[prefix] += 1
+
+        fc_all_types = set(map(lambda x: x.context.type, self.file_contexts))
+
+        log = Logger
+        log.info("STAT: Filesystem matched %d/%d FCs (%.2f%% are missing)",
+                len(fc_found), len(self.file_contexts), len(missing)/len(self.file_contexts)*100.0)
+        log.info("Here's a list of the most common filesystem prefixes that were never found")
+        for f, freq in sorted(fc_prefixes.items(), key=lambda x: x[1], reverse=True):
+            if freq > 1:
+                log.info("/%-10s - %d" % (f, freq))
+
+        with open('missing-fc-report.txt', 'w') as report:
+            for fc in sorted(missing, key=lambda _: _.regex.pattern):
+                report.write(fc.regex.pattern + " " + fc.context.type + "\n")
+
 pass
 
