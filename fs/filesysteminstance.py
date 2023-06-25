@@ -8,7 +8,7 @@ from android.init import AndroidInit
 from android.sepolicy import SELinuxContext
 from fs.filecontext import AndroidFileContext
 from fs.filesystempolicy import FilePolicy
-from se.graphnode import FileNode, GraphNode, IPCNode, SubjectNode, IGraphNode
+from se.graphnode import FileNode, GraphNode, IPCNode, ProcessNode, SubjectNode, IGraphNode
 from se.sepolicygraph import Class2, PolicyGraph
 from utils.logger import Logger
 from setools.policyrep import Context, Type
@@ -86,6 +86,9 @@ class FileSystemInstance:
 
         Logger.debug("Assigning conservative trust flag...")
         self.assign_trust()
+
+        Logger.debug("Generating a process tree...")
+        self.gen_process_tree()
 
         pass
 
@@ -650,6 +653,60 @@ class FileSystemInstance:
             if trusted:
                 obj.trusted = True
                 Logger.debug("Object %s is trusted (reason: %s)", name, reason)
+
+    def gen_process_tree(self):
+        """
+        Take the existing subject hierarchy and fully instantiate it.
+        This means expand out one of every backing file for a subject into a potential running
+        process. Whether or not the process is actually running will be decided during boot
+        simulation.
+        """
+        G_allow = self.sepol.G_allow
+        self.processes: Dict[str, ProcessNode] = {}
+        # Start from the top of hierarchy
+        kernel_subject = self.subjects["kernel"]
+        init_subject = self.subjects["init"]
+        visited: Set[SubjectNode] = set()
+
+        # Technically the kernel can have a ton of processes, but we only consider one in our graph
+        self.processes["kernel_0"] = ProcessNode(kernel_subject, None, {'/kernel' : {}}, 0)
+
+        # (parent: ProcessNode, child: SubjectNode)
+        stack = [(self.processes["kernel_0"], init_subject)]
+
+        ### Propagate subject permissions by simulating fork/exec
+        # Depth-first traversal
+
+        pid = 1
+
+        while len(stack):
+            parent_process, child_subject = stack.pop()
+            visited |= set([child_subject])
+
+            for fn, fp in child_subject.backing_files.items():
+                # fc = fp.selinux
+                # exec_rule_parent = None
+                # exec_rule_child = None
+                # if fc.type in G_allow[parent_process.subject.sid.type]:
+                #     exec_rule_parent = "execute_no_trans" in G_allow[parent_process.subject.sid.type][fc.type][0]["perms"]
+                # if fc.type in G_allow[child_subject.sid.type]:
+                #     exec_rule_child = "execute_no_trans" in G_allow[child_subject.sid.type][fc.type][0]["perms"]
+
+                # Conservatively assume the parent
+                new_process = ProcessNode(child_subject, parent_process, {fn : fp}, pid)
+                parent_process.children |= set([new_process])
+                proc_id = "%s_%d" % (child_subject.sid.type, pid)
+                
+                assert proc_id not in self.processes
+                self.processes[proc_id] = new_process
+
+                pid += 1
+
+                for child in sorted(child_subject.children, key=lambda x: str(x.sid.type)):
+                    if child not in visited or (child.sid.type == "crash_dump" and child_subject.sid.type in ["zygote"]):
+                        stack += [(new_process, child)]
+
+
 
 pass
 

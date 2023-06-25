@@ -1,6 +1,6 @@
 
 from enum import Enum
-from typing import Dict, Protocol, Set
+from typing import Dict, Protocol, Self, Set, Union
 from android.capabilities import Capabilities
 from android.dac import Cred
 from android.sepolicy import SELinuxContext
@@ -62,6 +62,7 @@ class IPCNode(GraphNode):
         # which subject owns this object (used for cred lookup)
         self.owner: SubjectNode = None
 
+    # XXX 暂时这样
     # @property
     # def trusted(self):
     #     return self.owner.trusted
@@ -75,27 +76,6 @@ class IPCNode(GraphNode):
 
     def __repr__(self):
         return "<IPCNode %s>" % self.sid.type
-
-class ProcessState(Enum):
-    RUNNING = 1
-    STOPPED = 2
-
-class ProcessNode(GraphNode):
-    def __init__(self, subject, parent, exe, pid, cred):
-        super().__init__()
-        # process state
-        self.state = ProcessState.STOPPED
-        self.subject = subject
-        self.parent = parent
-        self.exe = exe
-        self.pid = pid
-
-        self.cred: Cred = cred
-        self.children = set()
-
-    @property
-    def sid(self):
-        return self.cred.sid
 
 class SubjectNode(GraphNode):
     '''记录subject的父子关系'''
@@ -117,5 +97,25 @@ class SubjectNode(GraphNode):
     def get_node_name(self) -> str:
         return "subject:%s" % (self.sid.type)
 
+class ProcessState(Enum):
+    RUNNING = 1
+    STOPPED = 2
+
+class ProcessNode(GraphNode):
+    def __init__(self, subject: SubjectNode, parent: Union[None, Self], exe: Dict[str, FilePolicy], pid: int, cred = Cred()):
+        super().__init__()
+        # process state
+        self.state = ProcessState.STOPPED
+        self.subject = subject
+        self.parent = parent
+        self.exe = exe
+        self.pid = pid
+
+        self.cred: Cred = cred
+        self.children = set()
+
+    @property
+    def sid(self):
+        return self.cred.sid
 pass
 
